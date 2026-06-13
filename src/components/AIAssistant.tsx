@@ -10,9 +10,11 @@ import { auth } from "../firebase";
 
 interface Props {
   onTrackAction: (actionType: string) => void;
+  initialPrompt?: string | null;
+  onClearInitialPrompt?: () => void;
 }
 
-export default function AIAssistant({ onTrackAction }: Props) {
+export default function AIAssistant({ onTrackAction, initialPrompt, onClearInitialPrompt }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -32,6 +34,15 @@ export default function AIAssistant({ onTrackAction }: Props) {
   useEffect(() => {
     scrollToBottom();
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (initialPrompt) {
+      setInputValue(initialPrompt);
+      if (onClearInitialPrompt) {
+        onClearInitialPrompt();
+      }
+    }
+  }, [initialPrompt, onClearInitialPrompt]);
 
   const handleSendChat = async (textToSend?: string) => {
     const text = textToSend || inputValue.trim();

@@ -48,6 +48,7 @@ import EngineeringLibrary from "./components/EngineeringLibrary";
 import VisualizerCard from "./components/VisualizerCard";
 import ElectricalSymbols from "./components/ElectricalSymbols";
 import UnitConverter from "./components/UnitConverter";
+import ServicesMenu from "./components/ServicesMenu";
 import {
   ResponsiveContainer,
   LineChart,
@@ -85,6 +86,8 @@ import {
 export default function App() {
   // Page Navigation tab
   const [activePage, setActivePage] = useState<string>("dashboard");
+  // Shared AI assistant pre-filled prompt from services navigation matrix
+  const [aiServicePrompt, setAiServicePrompt] = useState<string | null>(null);
   // Calculators page sub-tabs
   const [calcTab, setCalcTab] = useState<"load" | "cable" | "vdrop" | "conduit" | "gemini-sizer">("load");
   // Region synchronization
@@ -1098,6 +1101,7 @@ export default function App() {
         <nav className="hidden md:flex items-center gap-1">
           {[
             { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
+            { id: "services", label: "Services Menu", icon: <Compass className="w-3.5 h-3.5" /> },
             { id: "calculator", label: "Calculator", icon: <CableIcon className="w-3.5 h-3.5" /> },
             { id: "converter", label: "Converter", icon: <RefreshCw className="w-3.5 h-3.5" /> },
             { id: "compliance", label: "Compliance", icon: <ShieldCheck className="w-3.5 h-3.5" /> },
@@ -1298,6 +1302,17 @@ export default function App() {
               Actions
             </span>
             <div className="space-y-1">
+              <button
+                onClick={() => setActivePage("services")}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg text-left transition cursor-pointer ${
+                  activePage === "services"
+                    ? "bg-amber-400 text-slate-900 font-extrabold shadow-sm"
+                    : "text-slate-600 dark:text-slate-350 hover:bg-slate-105 dark:hover:bg-slate-850"
+                }`}
+              >
+                <Compass className={`w-3.5 h-3.5 ${activePage === "services" ? "text-slate-900" : "text-emerald-500"}`} />
+                <span>Services Menu</span>
+              </button>
               <button
                 onClick={() => setActivePage("compliance")}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-lg text-left transition cursor-pointer"
@@ -2969,7 +2984,11 @@ export default function App() {
                 </div>
               </div>
 
-              <AIAssistant onTrackAction={trackActionOnBackend} />
+              <AIAssistant 
+                onTrackAction={trackActionOnBackend} 
+                initialPrompt={aiServicePrompt}
+                onClearInitialPrompt={() => setAiServicePrompt(null)}
+              />
             </div>
           )}
 
@@ -3006,6 +3025,22 @@ export default function App() {
           {/* QUICK UNIT CONVERTER TAB */}
           {activePage === "converter" && (
             <UnitConverter />
+          )}
+
+          {/* SERVICES NAVIGATION SUITE MENU */}
+          {activePage === "services" && (
+            <ServicesMenu 
+              onNavigate={(page, subTab) => {
+                setActivePage(page);
+                if (subTab) {
+                  setCalcTab(subTab as "load" | "cable" | "vdrop" | "conduit" | "gemini-sizer");
+                }
+              }}
+              onAskAI={(prompt) => {
+                setAiServicePrompt(prompt);
+                setActivePage("ai-assistant");
+              }}
+            />
           )}
 
           {/* SUBSCRIPTION & BILLING CARD VIEW */}
