@@ -1,0 +1,6 @@
+{
+  "name": "ELECTRO SYSTEM APP",
+  "description": "AI-powered electrical engineering workspace offering load calculations, cable sizing, code compliance, low-latency Gemini chatbot, and video tutorials.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

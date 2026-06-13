@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "UserAnalytics": {
+      "title": "User Analytics",
+      "description": "User profile tracking calculations run, compliance audits run, overall average quiz scores, and detailed breakdown of each course progress.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Unique user credentials identifier from Firebase Authentication."
+        },
+        "userName": {
+          "type": "string",
+          "description": "User's full name or greeting handle."
+        },
+        "courses": {
+          "type": "object",
+          "description": "Map of course ID keys to progress stats."
+        },
+        "overallScore": {
+          "type": "integer",
+          "description": "The dynamic average score across all course quizzes taken."
+        },
+        "calculationsRun": {
+          "type": "integer",
+          "description": "Number of electrical load and conductor calculations executed."
+        },
+        "checksRun": {
+          "type": "integer",
+          "description": "Number of code compliance audits executed."
+        }
+      },
+      "required": ["userId", "userName", "courses", "overallScore", "calculationsRun", "checksRun"]
+    }
+  },
+  "firestore": {
+    "/userAnalytics/{userId}": {
+      "schema": "#/entities/UserAnalytics",
+      "description": "User stats and curriculum tracking records document mapped to user ID."
+    }
+  }
+}

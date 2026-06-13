@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Auth Helper Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation blueprints for User Analytics Document
+    function isValidUserAnalytics(data) {
+      return data.userId is string 
+        && data.userId.size() <= 128
+        && data.userName is string
+        && data.userName.size() <= 100
+        && data.courses is map
+        && data.overallScore is int
+        && data.overallScore >= 0
+        && data.overallScore <= 100
+        && data.calculationsRun is int
+        && data.calculationsRun >= 0
+        && data.checksRun is int
+        && data.checksRun >= 0;
+    }
+
+    // match rule for the userAnalytics sub-collection
+    match /userAnalytics/{userId} {
+      allow read: if isOwner(userId);
+      
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserAnalytics(incoming())
+        && incoming().userId == userId;
+
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserAnalytics(incoming())
+        && incoming().userId == userId
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(userId);
+    }
+  }
+}
