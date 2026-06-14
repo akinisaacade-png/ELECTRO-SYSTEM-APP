@@ -11,7 +11,8 @@ import {
   RegionConfig,
   Cable,
   UserAnalytics,
-  CalculationResult
+  CalculationResult,
+  BulkLoadEntry
 } from "./types";
 import {
   Zap,
@@ -40,7 +41,10 @@ import {
   Loader2,
   Library,
   Layers,
-  Wrench
+  Wrench,
+  Plus,
+  Trash2,
+  ListPlus
 } from "lucide-react";
 import CourseAnalytics from "./components/CourseAnalytics";
 import AIAssistant from "./components/AIAssistant";
@@ -141,6 +145,46 @@ export default function App() {
   const [loadTemp, setLoadTemp] = useState(30);
   const [loadGroup, setLoadGroup] = useState(1.0);
   const [loadResult, setLoadResult] = useState<any>(null);
+
+  // Bulk Load Entry values
+  const [bulkLoads, setBulkLoads] = useState<BulkLoadEntry[]>([
+    {
+      id: "bulk-1",
+      name: "Chiller Compressor Motor",
+      kw: 45,
+      pf: 0.82,
+      phases: 3,
+      volt: 415,
+      isContinuous: true,
+      calculatedCurrent: 38.37
+    },
+    {
+      id: "bulk-2",
+      name: "Office HVAC Units",
+      kw: 18,
+      pf: 0.88,
+      phases: 3,
+      volt: 415,
+      isContinuous: true,
+      calculatedCurrent: 14.23
+    },
+    {
+      id: "bulk-3",
+      name: "Server Room Outlets",
+      kw: 12,
+      pf: 0.95,
+      phases: 1,
+      volt: 240,
+      isContinuous: true,
+      calculatedCurrent: 52.63
+    }
+  ]);
+  const [bulkName, setBulkName] = useState("");
+  const [bulkKw, setBulkKw] = useState<string>("15");
+  const [bulkPf, setBulkPf] = useState<string>("0.85");
+  const [bulkPhases, setBulkPhases] = useState<number>(3);
+  const [bulkVolt, setBulkVolt] = useState<string>("415");
+  const [bulkContinuous, setBulkContinuous] = useState<boolean>(true);
 
   // Quick Load values (Dashboard page)
   const [quickKw, setQuickKw] = useState(45);
@@ -450,6 +494,128 @@ export default function App() {
     triggerToast("Calculated full active layout.");
   };
 
+  // Bulk Loads Aggregate Sizing Calculations (Reactive useMemo Engine)
+  const bulkLoadsCalculations = React.useMemo(() => {
+    if (bulkLoads.length === 0) {
+      return {
+        totalKw: 0,
+        totalKva: 0,
+        totalPf: 1.0,
+        baseCurrentA: 0,
+        designCurrentA: 0,
+        feederVolt: loadVolt,
+        feederPhases: loadPhases
+      };
+    }
+
+    let sumKw = 0;
+    let sumKvar = 0;
+    
+    // Safety Sizing (NEC / BS requirements): 1.25 * continuous + 1.0 * non-continuous
+    let sumDesignKw = 0;
+    let sumDesignKvar = 0;
+
+    bulkLoads.forEach((load) => {
+      const kw = load.kw;
+      const pf = load.pf;
+      const theta = Math.acos(pf);
+      const kvar = kw * Math.tan(theta);
+
+      sumKw += kw;
+      sumKvar += kvar;
+
+      const scale = load.isContinuous ? 1.25 : 1.0;
+      sumDesignKw += kw * scale;
+      sumDesignKvar += kvar * scale;
+    });
+
+    const totalKva = Math.sqrt(sumKw * sumKw + sumKvar * sumKvar);
+    const totalPf = totalKva > 0 ? sumKw / totalKva : 1.0;
+
+    const designKva = Math.sqrt(sumDesignKw * sumDesignKw + sumDesignKvar * sumDesignKvar);
+
+    const feederVolt = loadVolt;
+    const feederPhases = loadPhases;
+
+    let baseCurrentA = 0;
+    let designCurrentA = 0;
+
+    if (feederPhases === 3) {
+      baseCurrentA = (totalKva * 1000) / (Math.sqrt(3) * feederVolt);
+      designCurrentA = (designKva * 1000) / (Math.sqrt(3) * feederVolt);
+    } else {
+      baseCurrentA = (totalKva * 1000) / feederVolt;
+      designCurrentA = (designKva * 1000) / feederVolt;
+    }
+
+    return {
+      totalKw: sumKw,
+      totalKvar: sumKvar,
+      totalKva,
+      totalPf,
+      baseCurrentA,
+      designCurrentA,
+      feederVolt,
+      feederPhases
+    };
+  }, [bulkLoads, loadVolt, loadPhases]);
+
+  const handleAddBulkLoad = () => {
+    const kw = parseFloat(bulkKw);
+    const pf = parseFloat(bulkPf);
+    const phases = bulkPhases;
+    const volt = parseInt(bulkVolt);
+
+    if (!bulkName.trim()) {
+      triggerToast("Please input a description name for the load entry.");
+      return;
+    }
+    if (isNaN(kw) || kw <= 0) {
+      triggerToast("Please input a valid active power rating in kW.");
+      return;
+    }
+    if (isNaN(pf) || pf < 0.1 || pf > 1.0) {
+      triggerToast("Please input a valid power factor between 0.1 and 1.0.");
+      return;
+    }
+    if (isNaN(volt) || volt <= 0) {
+      triggerToast("Please input a valid circuit voltage level.");
+      return;
+    }
+
+    // Individual line current
+    let current = 0;
+    if (phases === 3) {
+      current = (kw * 1000) / (Math.sqrt(3) * volt * pf);
+    } else {
+      current = (kw * 1000) / (volt * pf);
+    }
+
+    const newLoad: BulkLoadEntry = {
+      id: "bulk-" + Date.now(),
+      name: bulkName.trim(),
+      kw,
+      pf,
+      phases,
+      volt,
+      isContinuous: bulkContinuous,
+      calculatedCurrent: parseFloat(current.toFixed(2))
+    };
+
+    setBulkLoads((prev) => [...prev, newLoad]);
+    setBulkName("");
+    triggerToast(`Added load "${newLoad.name}" to summary list!`);
+    trackActionOnBackend("add_bulk_load");
+  };
+
+  const handleDeleteBulkLoad = (id: string) => {
+    const found = bulkLoads.find((l) => l.id === id);
+    setBulkLoads((prev) => prev.filter((l) => l.id !== id));
+    if (found) {
+      triggerToast(`Removed load: "${found.name}"`);
+    }
+  };
+
   const runCableSizingTool = () => {
     const codesTable = isImperial ? CABLE_TABLES.awg : CABLE_TABLES.metric;
     const regConf = REGIONS[activeRegion];
@@ -691,6 +857,33 @@ export default function App() {
     setLastResults((p) => ({ ...p, regionalComplianceReport: ccResultsObj }));
     trackActionOnBackend("compliance_check");
     triggerToast("Calculated total global standards compliance report.");
+  };
+
+  // Download lastResults as raw JSON file for software interoperability
+  const downloadLastResultsJson = () => {
+    if (!lastResults || Object.keys(lastResults).length === 0) {
+      triggerToast("Please perform a calculation in any tab before attempting to export raw JSON.");
+      return;
+    }
+
+    try {
+      const dataStr = JSON.stringify(lastResults, null, 2);
+      const blob = new Blob([dataStr], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `electro_calculator_results_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      triggerToast("Raw JSON calculation data exported successfully! ✓");
+      trackActionOnBackend("export_json_complete");
+    } catch (e) {
+      console.error("Export JSON failed", e);
+      triggerToast("Could not generate raw JSON file.");
+    }
   };
 
   // Create downloadable file report (Professional PDF via jsPDF)
@@ -1402,6 +1595,13 @@ export default function App() {
                 <Download className="w-3.5 h-3.5" />
                 <span>Export Audit Logs</span>
               </button>
+              <button
+                onClick={downloadLastResultsJson}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/10 rounded-lg text-left font-semibold transition cursor-pointer border border-dashed border-amber-300 dark:border-amber-500/20"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Raw JSON Data</span>
+              </button>
             </div>
           </div>
         </aside>
@@ -1944,8 +2144,25 @@ export default function App() {
                             type="number"
                             value={loadTemp}
                             onChange={(e) => setLoadTemp(parseInt(e.target.value) || 30)}
-                            className="w-full text-xs p-2 rounded bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100"
+                            className={`w-full text-xs p-2 rounded bg-slate-50 dark:bg-slate-900 border text-slate-800 dark:text-slate-100 ${
+                              (isImperial ? loadTemp > 104 : loadTemp > 40)
+                                ? "border-amber-500 ring-2 ring-amber-500/20"
+                                : "border-slate-200 dark:border-slate-800"
+                            }`}
                           />
+                          {(isImperial ? loadTemp > 104 : loadTemp > 40) && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-3xs text-amber-600 dark:text-amber-400 mt-1 flex items-start gap-1.5 leading-snug font-semibold"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-500 mt-0.5 animate-pulse" />
+                              <div>
+                                <span className="font-extrabold block uppercase tracking-wider text-[8.5px] text-amber-700 dark:text-amber-400">Severe Conductor Derating Warning</span>
+                                Ambient temperature exceeds standard 40°C threshold. Conductor ampacity values must be severely derated in accordance with code criteria (NEC/BS 7671) to prevent severe insulation breakdown.
+                              </div>
+                            </motion.div>
+                          )}
                         </div>
                         <div className="space-y-1">
                           <label className="text-xs font-semibold text-slate-550 block">Group Derating Multiplier</label>
@@ -1983,6 +2200,12 @@ export default function App() {
                         className="text-xs border border-slate-200 dark:border-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-lg font-bold transition flex items-center gap-1 cursor-pointer text-slate-600 dark:text-slate-300"
                       >
                         <Download className="w-4 h-4" /> Download Report
+                      </button>
+                      <button
+                        onClick={downloadLastResultsJson}
+                        className="text-xs border border-amber-200 dark:border-amber-950/40 hover:bg-amber-50 dark:hover:bg-amber-900/10 p-2 rounded-lg font-semibold transition flex items-center gap-1 cursor-pointer text-amber-600 dark:text-amber-450"
+                      >
+                        <Download className="w-4 h-4" /> Export Raw JSON
                       </button>
                       <button
                         onClick={runFullLoadCalc}
@@ -2033,6 +2256,273 @@ export default function App() {
                         </div>
                       </motion.div>
                     )}
+
+                    {/* SECTION 2: BULK LOAD FEEDER AGGREGATOR */}
+                    <div className="border border-slate-200 dark:border-slate-800 rounded-2xl p-6 bg-slate-50/50 dark:bg-slate-900/40 space-y-6 mt-8">
+                      <div className="border-b border-slate-200/60 dark:border-slate-800 pb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div>
+                          <h4 className="text-sm font-black uppercase text-slate-800 dark:text-slate-100 tracking-wider flex items-center gap-2">
+                            <ListPlus className="w-5 h-5 text-amber-500" />
+                            Feeder Circuit Bulk Load Aggregator
+                          </h4>
+                          <p className="text-[10px] text-slate-500 font-semibold mt-0.5 leading-tight">
+                            Aggregate multiple separate branching loads to calculate the true root feeder kVA, power factor vector-sum, and main feeder current.
+                          </p>
+                        </div>
+                        <span className="text-[9px] font-black tracking-wider bg-slate-200/60 dark:bg-slate-800 text-slate-755 dark:text-slate-400 px-2 py-0.5 rounded border border-slate-200/50 dark:border-slate-750 uppercase">
+                          Feeder System Block
+                        </span>
+                      </div>
+
+                      {/* Add load node entry form */}
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-xl space-y-4">
+                        <h5 className="text-3xs font-black uppercase tracking-widest text-amber-600 dark:text-amber-450">
+                          Add New Branch Circuit Loading Node
+                        </h5>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-slate-450 block">Load Description</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Workshop Compressor, Zone B Lighting"
+                              value={bulkName}
+                              onChange={(e) => setBulkName(e.target.value)}
+                              className="w-full text-xs p-2 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-slate-450 block">Active Power (kW)</label>
+                            <input
+                              type="number"
+                              value={bulkKw}
+                              onChange={(e) => setBulkKw(e.target.value)}
+                              placeholder="kW"
+                              className="w-full text-xs p-2 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-slate-450 block">Power Factor (PF)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0.1"
+                              max="1.0"
+                              value={bulkPf}
+                              onChange={(e) => setBulkPf(e.target.value)}
+                              placeholder="e.g. 0.85"
+                              className="w-full text-xs p-2 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-slate-450 block">Load Phases</label>
+                            <select
+                              value={bulkPhases}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                setBulkPhases(val);
+                                // Set sensible default voltages
+                                if (val === 3) {
+                                  setBulkVolt(["US", "CA"].includes(activeRegion) ? "480" : "415");
+                                } else {
+                                  setBulkVolt(["US", "CA"].includes(activeRegion) ? "120" : "240");
+                                }
+                              }}
+                              className="w-full text-xs p-2 rounded bg-slate-50 dark:bg-slate-955 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 cursor-pointer"
+                            >
+                              <option value={3}>3-Phase Balanced</option>
+                              <option value={1}>1-Phase (Single line)</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-slate-450 block">Node Voltage (V)</label>
+                            <input
+                              type="number"
+                              value={bulkVolt}
+                              onChange={(e) => setBulkVolt(e.target.value)}
+                              placeholder="V"
+                              className="w-full text-xs p-2 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-slate-450 block">Duty Cycle Margin</label>
+                            <div className="flex items-center gap-2 h-9">
+                              <input
+                                type="checkbox"
+                                id="bulk-continuous-check"
+                                checked={bulkContinuous}
+                                onChange={(e) => setBulkContinuous(e.target.checked)}
+                                className="w-4 h-4 text-amber-500 rounded border-slate-350 focus:ring-amber-500 cursor-pointer"
+                              />
+                              <label htmlFor="bulk-continuous-check" className="text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                                Continuous Duty (125% Factor)
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={handleAddBulkLoad}
+                            className="bg-amber-500 hover:bg-amber-600 dark:bg-amber-500 dark:hover:bg-amber-600 text-slate-900 border border-transparent font-black text-[11px] py-1.5 px-4 rounded-lg transition-all shadow-sm shadow-amber-500/10 cursor-pointer flex items-center gap-1.5"
+                          >
+                            <Plus className="w-3.5 h-3.5 stroke-[3]" /> Add Load to Feeder Array
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Summary Table of Added Load entries */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400 font-sans">
+                            Active Loading Nodes ({bulkLoads.length})
+                          </span>
+                          {bulkLoads.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBulkLoads([]);
+                                triggerToast("Cleared all load array coordinates.");
+                              }}
+                              className="text-[10px] font-bold text-rose-500 hover:text-rose-650 cursor-pointer select-none"
+                            >
+                              Clear Core Array
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-3xs">
+                          {bulkLoads.length === 0 ? (
+                            <div className="p-8 text-center text-xs text-slate-400 font-semibold italic">
+                              No loading nodes inserted yet. Feed description, active kW power and power factor ratings above.
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-55 dark:bg-slate-950 border-b border-slate-250 dark:border-slate-800 text-slate-500 uppercase font-black tracking-wider text-[9px]">
+                                    <th className="px-4 py-2.5">Node Description</th>
+                                    <th className="px-4 py-2.5">Duty Cycle</th>
+                                    <th className="px-4 py-2.5">System Reference</th>
+                                    <th className="px-4 py-2.5 text-right font-sans">Power Parameters</th>
+                                    <th className="px-4 py-2.5 text-right text-amber-600 dark:text-amber-450">Branch Current</th>
+                                    <th className="px-4 py-2.5 text-center w-12">Delete</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-150 dark:divide-slate-800">
+                                  {bulkLoads.map((load) => (
+                                    <tr key={load.id} className="hover:bg-slate-55/40 dark:hover:bg-slate-900/50 transition">
+                                      <td className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200">
+                                        {load.name}
+                                      </td>
+                                      <td className="px-4 py-3 font-semibold">
+                                        <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                          load.isContinuous 
+                                            ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-550/15" 
+                                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-250 dark:border-slate-750"
+                                        }`}>
+                                          {load.isContinuous ? "Continuous" : "Non-Continuous"}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 font-mono text-3xs">
+                                        {load.phases}Φ – {load.volt} V
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">
+                                        {load.kw} kW <span className="text-[10px] text-slate-450">(PF {load.pf})</span>
+                                      </td>
+                                      <td className="px-4 py-3 text-right font-black text-amber-600 dark:text-amber-400 font-mono">
+                                        {load.calculatedCurrent} A
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteBulkLoad(load.id)}
+                                          className="text-slate-400 hover:text-rose-500 transition cursor-pointer p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                                          title="Delete Load Node"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Feeder Aggregate Calculation Output dashboard */}
+                      {bulkLoads.length > 0 && (
+                        <div className="bg-amber-500/5 dark:bg-amber-950/5 border border-amber-500/30 dark:border-amber-500/15 p-5 rounded-xl space-y-4 shadow-2xs">
+                          <div className="flex justify-between items-center pb-2 border-b border-amber-500/15">
+                            <strong className="text-xs font-black text-amber-700 dark:text-amber-400 tracking-wider uppercase flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse inline-block" />
+                              Aggregate Feeder Circuit Metrics Sizer
+                            </strong>
+                            <span className="text-[10px] uppercase font-bold text-amber-650 dark:text-amber-450">
+                              Integrated Calculation Output
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+                            <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 block leading-tight font-black uppercase tracking-wider">Total Active Power</span>
+                              <span className="text-sm font-black text-slate-850 dark:text-white">{bulkLoadsCalculations.totalKw.toFixed(1)} kW</span>
+                            </div>
+                            <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 block leading-tight font-black uppercase tracking-wider">Total Apparent Power</span>
+                              <span className="text-sm font-black text-slate-850 dark:text-white">{bulkLoadsCalculations.totalKva.toFixed(1)} kVA</span>
+                            </div>
+                            <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 block leading-tight font-black uppercase tracking-wider">Equivalent Power Factor</span>
+                              <span className="text-sm font-black text-slate-850 dark:text-white">{bulkLoadsCalculations.totalPf.toFixed(2)}</span>
+                            </div>
+                            <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 block leading-tight font-black uppercase tracking-wider">Feeder Voltage Reference</span>
+                              <span className="text-sm font-black text-slate-850 dark:text-white font-mono text-[11px] leading-6">{bulkLoadsCalculations.feederPhases}Φ – {bulkLoadsCalculations.feederVolt}V</span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+                            <div className="bg-white dark:bg-slate-900 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 border-l-4 border-amber-500 shadow-3xs">
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-tight font-bold uppercase">Aggregate Base Current</span>
+                              <span className="text-lg font-black text-slate-850 dark:text-white">{bulkLoadsCalculations.baseCurrentA.toFixed(2)} A</span>
+                            </div>
+
+                            <div className="bg-white dark:bg-slate-900 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 border-l-4 border-amber-500 shadow-3xs selection-focus animate-pulse">
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-tight font-bold uppercase">Aggregate Design Current</span>
+                              <span className="text-lg font-black text-amber-600 dark:text-amber-450">{bulkLoadsCalculations.designCurrentA.toFixed(2)} A</span>
+                              <span className="text-[8px] text-slate-400 dark:text-slate-500 block leading-tight font-semibold mt-1">Includes 125% continuous margin</span>
+                            </div>
+
+                            <div className="bg-white dark:bg-slate-900 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 border-l-4 border-lime-500 shadow-3xs">
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-tight font-bold uppercase">Feeder Cable Sizing</span>
+                              <span className="text-lg font-black text-lime-600 dark:text-lime-450">
+                                {selectCableFromList(bulkLoadsCalculations.designCurrentA, activeRegion).sz}
+                              </span>
+                              <span className="text-[8px] text-slate-450 block leading-tight font-semibold mt-1">Sized layout for safety</span>
+                            </div>
+
+                            <div className="bg-white dark:bg-slate-900 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 border-l-4 border-slate-700 shadow-3xs">
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-tight font-bold uppercase">Suggested Main OCPD</span>
+                              <span className="text-lg font-black text-slate-850 dark:text-white">{Math.max(15, Math.ceil(bulkLoadsCalculations.designCurrentA / 5) * 5)} A</span>
+                              <span className="text-[8px] text-slate-450 block leading-tight font-semibold mt-1">Standard trip breaker link</span>
+                            </div>
+                          </div>
+
+                          <p className="text-[11px] leading-relaxed text-slate-650 dark:text-slate-350 p-3.5 bg-white/45 dark:bg-black/35 rounded-lg border border-slate-200/50 dark:border-slate-800 shadow-3xs font-medium">
+                            <span className="font-extrabold uppercase text-slate-800 dark:text-slate-200 text-[10px] block mb-0.5">Aggregate Circuit Rule:</span> 
+                            Feeder current is computed via vector math to sum active and reactive power components separately. Under current authority codes ({REGIONS[activeRegion].ref}), the resulting baseline uncompensated current is <strong className="text-slate-800 dark:text-slate-100">{bulkLoadsCalculations.baseCurrentA.toFixed(2)}A</strong>, with a standard code minimum design load of <strong className="text-amber-600 dark:text-amber-400">{bulkLoadsCalculations.designCurrentA.toFixed(2)}A</strong> requiring a minimum feeder rating wire core of <strong className="text-lime-600 dark:text-lime-400">{selectCableFromList(bulkLoadsCalculations.designCurrentA, activeRegion).sz}</strong>.
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               )}

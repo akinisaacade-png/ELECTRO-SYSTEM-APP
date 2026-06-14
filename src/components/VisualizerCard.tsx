@@ -104,6 +104,47 @@ export default function VisualizerCard({
 
   const colors = getPhaseColors();
 
+  // Dynamic trigonometry calculations for Phasors Vector Diagram
+  const pf = parseFloat(String(loadPf)) || 0.85;
+  const thetaRad = Math.acos(pf);
+  const thetaDeg = (thetaRad * 180) / Math.PI;
+
+  const cx = 90;
+  const cy = 90;
+  const vLen = 65;
+  const iLen = 45;
+
+  // Single-Phase configurations:
+  const v1SingleX = cx + vLen;
+  const v1SingleY = cy;
+  const nSingleX = cx - 35;
+  const nSingleY = cy;
+  const i1SingleX = cx + iLen * Math.cos(-thetaRad);
+  const i1SingleY = cy - iLen * Math.sin(-thetaRad);
+
+  // Three-Phase configurations (L1, L2, L3):
+  // L1 Phasors (0 degrees reference)
+  const v1X = cx + vLen;
+  const v1Y = cy;
+  const i1X = cx + iLen * Math.cos(-thetaRad);
+  const i1Y = cy - iLen * Math.sin(-thetaRad);
+
+  // L2 Phasors (-120 degrees reference)
+  const radL2 = (-120 * Math.PI) / 180;
+  const radI2 = ((-120 - thetaDeg) * Math.PI) / 180;
+  const v2X = cx + vLen * Math.cos(radL2);
+  const v2Y = cy - vLen * Math.sin(radL2);
+  const i2X = cx + iLen * Math.cos(radI2);
+  const i2Y = cy - iLen * Math.sin(radI2);
+
+  // L3 Phasors (120 degrees reference)
+  const radL3 = (120 * Math.PI) / 180;
+  const radI3 = ((120 - thetaDeg) * Math.PI) / 180;
+  const v3X = cx + vLen * Math.cos(radL3);
+  const v3Y = cy - vLen * Math.sin(radL3);
+  const i3X = cx + iLen * Math.cos(radI3);
+  const i3Y = cy - iLen * Math.sin(radI3);
+
   // Helper values for display units
   const lengthUnit = isImperial ? "ft" : "m";
   const areaUnit = isImperial ? "AWG" : "mm²";
@@ -170,107 +211,239 @@ export default function VisualizerCard({
         </div>
 
         {/* Dynamic Vector Stage */}
-        <div className="flex-1 flex items-center justify-center min-h-[220px] bg-slate-950/80 rounded-xl border border-slate-800/80 relative p-4 overflow-hidden">
+        <div id="dynamic-vector-stage" className={`flex-1 flex rounded-xl border border-slate-800/80 relative p-4 overflow-hidden bg-slate-950/80 ${
+          activeTab === "load" ? "flex-col lg:flex-row gap-6 items-stretch justify-between" : "items-center justify-center min-h-[220px]"
+        }`}>
           {/* Subtle design matrix background */}
           <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px]" />
           
           {/* TAB A: LOAD VECTOR SCHEMATIC */}
           {activeTab === "load" && (
-            <svg viewBox="0 0 450 180" className="w-full max-w-md h-auto">
-              {/* Transformer block (Source) */}
-              <g id="transformer" transform="translate(15, 30)">
-                <rect x="0" y="20" width="70" height="70" rx="8" fill="#1E293B" stroke="#38BDF8" strokeWidth="2" className="transition-all" />
-                <path d="M 15 55 Q 25 35, 35 55 T 55 55" fill="none" stroke="#60A5FA" strokeWidth="2.5" />
-                <path d="M 15 63 Q 25 43, 35 63 T 55 63" fill="none" stroke="#F43F5E" strokeWidth="1.5" />
-                {/* Connection point */}
-                <circle cx="70" cy="55" r="4" fill="#60A5FA" />
-                <text x="35" y="105" fontSize="9" fontWeight="bold" fill="#94A3B8" textAnchor="middle">
-                  {loadVolt}V Transformer
-                </text>
-                <text x="35" y="117" fontSize="8" fill="#38BDF8" textAnchor="middle" className="font-mono">
-                  {loadPhases}Φ {loadPhases === 3 ? "Balanced" : "Single"}
-                </text>
-              </g>
-
-              {/* Cable connecting lines - Dynamic drop rate indicator color */}
-              <line 
-                x1="85" y1="85" x2="165" y2="85" 
-                stroke={loadResult ? "#34D399" : "#64748B"} 
-                strokeWidth="4" 
-                strokeDasharray={loadType === "motor" ? "6,4" : "none"} 
-              />
-              
-              {/* Overcurrent Breaker (MCB) */}
-              <g id="breaker" transform="translate(170, 50)">
-                <rect x="0" y="10" width="35" height="50" rx="4" fill="#334155" stroke="#F59E0B" strokeWidth="2" />
-                {/* Toggle Switch lever */}
-                <line x1="8" y1="35" x2="27" y2="25" stroke="#F59E0B" strokeWidth="3" strokeLinecap="round" />
-                <circle cx="27" cy="25" r="3.5" fill="#E2E8F0" />
-                <text x="17.5" y="75" fontSize="9" fontWeight="bold" fill="#F59E0B" textAnchor="middle">
-                  {loadResult ? `${loadResult.breaker}A MCB` : "MCB Sizing"}
-                </text>
-              </g>
-
-              {/* Load Cable linking further */}
-              <line 
-                x1="205" y1="85" x2="350" y2="85" 
-                stroke={loadResult ? "#34D399" : "#64748B"} 
-                strokeWidth="4" 
-              />
-              {/* Cable tag / tooltip */}
-              {loadResult && (
-                <g transform="translate(225, 45)">
-                  <rect x="0" y="0" width="110" height="26" rx="4" fill="#0F172A" stroke="#10B981" strokeWidth="1" />
-                  <text x="55" y="11" fontSize="8" fontWeight="bold" fill="#34D399" textAnchor="middle" className="font-mono">
-                    Conductor: {formatArea(parseFloat(loadResult.cable) || 0, loadResult.cable)}
-                  </text>
-                  <text x="55" y="21" fontSize="7" fill="#94A3B8" textAnchor="middle" className="font-mono">
-                    Derated: {loadResult.deratedCurrent}A
-                  </text>
-                </g>
-              )}
-
-              {/* Connected Load Object */}
-              <g id="load-object" transform="translate(355, 30)">
-                {loadType === "motor" ? (
-                  // Motor Visual
-                  <>
-                    <circle cx="40" cy="55" r="30" fill="#1E293B" stroke="#A78BFA" strokeWidth="2.5" />
-                    <line x1="40" y1="20" x2="40" y2="10" stroke="#A78BFA" strokeWidth="2" />
-                    <circle cx="40" cy="55" r="14" fill="none" stroke="#F43F5E" strokeWidth="2" strokeDasharray="4,2" className="animate-spin-slow origin-center" style={{ transformOrigin: "395px 85px" }} />
-                    <text x="40" y="59" fontSize="13" fontWeight="black" fill="#A78BFA" textAnchor="middle">M</text>
-                    <text x="40" y="105" fontSize="9" fontWeight="bold" fill="#94A3B8" textAnchor="middle">
-                      {loadKw} kW Motor
+            <div className="w-full flex-1 flex flex-col lg:flex-row items-center gap-6 justify-between">
+              {/* Distribution Loop Layout schematic (Left) */}
+              <div className="flex-1 w-full flex flex-col justify-center min-h-[180px]">
+                <svg viewBox="0 0 450 180" className="w-full h-auto">
+                  {/* Transformer block (Source) */}
+                  <g id="transformer" transform="translate(15, 30)">
+                    <rect x="0" y="20" width="70" height="70" rx="8" fill="#1E293B" stroke="#38BDF8" strokeWidth="2" className="transition-all" />
+                    <path d="M 15 55 Q 25 35, 35 55 T 55 55" fill="none" stroke="#60A5FA" strokeWidth="2.5" />
+                    <path d="M 15 63 Q 25 43, 35 63 T 55 63" fill="none" stroke="#F43F5E" strokeWidth="1.5" />
+                    {/* Connection point */}
+                    <circle cx="70" cy="55" r="4" fill="#60A5FA" />
+                    <text x="35" y="105" fontSize="9" fontWeight="bold" fill="#94A3B8" textAnchor="middle">
+                      {loadVolt}V Transformer
                     </text>
-                  </>
-                ) : (
-                  // Facility Visual
-                  <>
-                    <polygon points="40,25 10,55 70,55" fill="#1E293B" stroke="#A78BFA" strokeWidth="2" />
-                    <rect x="18" y="55" width="44" height="35" fill="#1E293B" stroke="#A78BFA" strokeWidth="2" />
-                    <rect x="34" y="68" width="12" height="22" fill="#334155" />
-                    {/* Glowing yellow window */}
-                    <rect x="23" y="60" width="8" height="8" fill="#FBBF24" opacity="0.8" />
-                    <rect x="49" y="60" width="8" height="8" fill="#FBBF24" opacity="0.8" />
-                    <text x="40" y="105" fontSize="9" fontWeight="bold" fill="#94A3B8" textAnchor="middle">
-                      {loadType === "continuous" ? "Active Continuous" : "General Purpose"}
+                    <text x="35" y="117" fontSize="8" fill="#38BDF8" textAnchor="middle" className="font-mono">
+                      {loadPhases}Φ {loadPhases === 3 ? "Balanced" : "Single"}
                     </text>
-                  </>
-                )}
-                <text x="40" y="117" fontSize="8" fill="#A78BFA" textAnchor="middle" className="font-mono">
-                  PF: {loadPf} | I: {loadResult ? `${loadResult.base}A` : "--"}
-                </text>
-              </g>
+                  </g>
 
-              {/* Ground Bonding Earth link */}
-              <path d="M 50 120 L 50 145 L 80 145" fill="none" stroke={colors.earth} strokeWidth="1.5" strokeDasharray="3,3" />
-              <g transform="translate(80, 140)">
-                <line x1="0" y1="5" x2="16" y2="5" stroke={colors.earth} strokeWidth="2" />
-                <line x1="3" y1="9" x2="13" y2="9" stroke={colors.earth} strokeWidth="1.5" />
-                <line x1="6" y1="13" x2="10" y2="13" stroke={colors.earth} strokeWidth="1" />
-                <text x="21" y="10" fontSize="7" fill={colors.earth} fontWeight="bold" className="font-mono">Earth Electrode</text>
-              </g>
-            </svg>
+                  {/* Cable connecting lines - Dynamic drop rate indicator color */}
+                  <line 
+                    x1="85" y1="85" x2="165" y2="85" 
+                    stroke={loadResult ? "#34D399" : "#64748B"} 
+                    strokeWidth="4" 
+                    strokeDasharray={loadType === "motor" ? "6,4" : "none"} 
+                  />
+                  
+                  {/* Overcurrent Breaker (MCB) */}
+                  <g id="breaker" transform="translate(170, 50)">
+                    <rect x="0" y="10" width="35" height="50" rx="4" fill="#334155" stroke="#F59E0B" strokeWidth="2" />
+                    {/* Toggle Switch lever */}
+                    <line x1="8" y1="35" x2="27" y2="25" stroke="#F59E0B" strokeWidth="3" strokeLinecap="round" />
+                    <circle cx="27" cy="25" r="3.5" fill="#E2E8F0" />
+                    <text x="17.5" y="75" fontSize="9" fontWeight="bold" fill="#F59E0B" textAnchor="middle">
+                      {loadResult ? `${loadResult.breaker}A MCB` : "MCB Sizing"}
+                    </text>
+                  </g>
+
+                  {/* Load Cable linking further */}
+                  <line 
+                    x1="205" y1="85" x2="350" y2="85" 
+                    stroke={loadResult ? "#34D399" : "#64748B"} 
+                    strokeWidth="4" 
+                  />
+                  {/* Cable tag / tooltip */}
+                  {loadResult && (
+                    <g transform="translate(225, 45)">
+                      <rect x="0" y="0" width="110" height="26" rx="4" fill="#0F172A" stroke="#10B981" strokeWidth="1" />
+                      <text x="55" y="11" fontSize="8" fontWeight="bold" fill="#34D399" textAnchor="middle" className="font-mono">
+                        Conductor: {formatArea(parseFloat(loadResult.cable) || 0, loadResult.cable)}
+                      </text>
+                      <text x="55" y="21" fontSize="7" fill="#94A3B8" textAnchor="middle" className="font-mono">
+                        Derated: {loadResult.deratedCurrent}A
+                      </text>
+                    </g>
+                  )}
+
+                  {/* Connected Load Object */}
+                  <g id="load-object" transform="translate(355, 30)">
+                    {loadType === "motor" ? (
+                      // Motor Visual
+                      <>
+                        <circle cx="40" cy="55" r="30" fill="#1E293B" stroke="#A78BFA" strokeWidth="2.5" />
+                        <line x1="40" y1="20" x2="40" y2="10" stroke="#A78BFA" strokeWidth="2" />
+                        <circle cx="40" cy="55" r="14" fill="none" stroke="#F43F5E" strokeWidth="2" strokeDasharray="4,2" className="animate-spin-slow origin-center" style={{ transformOrigin: "395px 85px" }} />
+                        <text x="40" y="59" fontSize="13" fontWeight="black" fill="#A78BFA" textAnchor="middle">M</text>
+                        <text x="40" y="105" fontSize="9" fontWeight="bold" fill="#94A3B8" textAnchor="middle">
+                          {loadKw} kW Motor
+                        </text>
+                      </>
+                    ) : (
+                      // Facility Visual
+                      <>
+                        <polygon points="40,25 10,55 70,55" fill="#1E293B" stroke="#A78BFA" strokeWidth="2" />
+                        <rect x="18" y="55" width="44" height="35" fill="#1E293B" stroke="#A78BFA" strokeWidth="2" />
+                        <rect x="34" y="68" width="12" height="22" fill="#334155" />
+                        {/* Glowing yellow window */}
+                        <rect x="23" y="60" width="8" height="8" fill="#FBBF24" opacity="0.8" />
+                        <rect x="49" y="60" width="8" height="8" fill="#FBBF24" opacity="0.8" />
+                        <text x="40" y="105" fontSize="9" fontWeight="bold" fill="#94A3B8" textAnchor="middle">
+                          {loadType === "continuous" ? "Active Continuous" : "General Purpose"}
+                        </text>
+                      </>
+                    )}
+                    <text x="40" y="117" fontSize="8" fill="#A78BFA" textAnchor="middle" className="font-mono">
+                      PF: {loadPf} | I: {loadResult ? `${loadResult.base}A` : "--"}
+                    </text>
+                  </g>
+
+                  {/* Ground Bonding Earth link */}
+                  <path d="M 50 120 L 50 145 L 80 145" fill="none" stroke={colors.earth} strokeWidth="1.5" strokeDasharray="3,3" />
+                  <g transform="translate(80, 140)">
+                    <line x1="0" y1="5" x2="16" y2="5" stroke={colors.earth} strokeWidth="2" />
+                    <line x1="3" y1="9" x2="13" y2="9" stroke={colors.earth} strokeWidth="1.5" />
+                    <line x1="6" y1="13" x2="10" y2="13" stroke={colors.earth} strokeWidth="1" />
+                    <text x="21" y="10" fontSize="7" fill={colors.earth} fontWeight="bold" className="font-mono">Earth Electrode</text>
+                  </g>
+                </svg>
+              </div>
+
+              {/* Dynamic Phasors Diagram (Right) */}
+              <div id="phasors-visualizer" className="w-full lg:w-48 shrink-0 flex flex-col items-center bg-slate-900/60 p-4 rounded-xl border border-slate-800 relative self-stretch justify-center">
+                <div className="absolute top-2 left-2 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                  <span className="text-[9px] font-black uppercase text-slate-300 tracking-wider">
+                    Phasor diagram ({loadPhases}Φ)
+                  </span>
+                </div>
+                
+                <div className="w-full flex items-center justify-center py-2">
+                  <svg viewBox="0 0 180 180" className="w-32 h-32">
+                    {/* Concentric grid rings */}
+                    <circle cx="90" cy="90" r="25" fill="none" stroke="#2D3748" strokeWidth="0.75" strokeDasharray="3,3" />
+                    <circle cx="90" cy="90" r="50" fill="none" stroke="#2D3748" strokeWidth="0.75" strokeDasharray="3,3" />
+                    <circle cx="90" cy="90" r="72" fill="none" stroke="#4a5568" strokeWidth="1" strokeDasharray="2,2" />
+
+                    {/* Polar Axes lines */}
+                    <line x1="15" y1="90" x2="165" y2="90" stroke="#1A202C" strokeWidth="1" />
+                    <line x1="90" y1="15" x2="90" y2="165" stroke="#1A202C" strokeWidth="1" />
+
+                    {/* Angular labels */}
+                    <text x="171" y="93" fontSize="6.5" fill="#4A5568" fontWeight="black" className="font-mono">0°</text>
+                    <text x="83" y="12" fontSize="6.5" fill="#4A5568" fontWeight="black" className="font-mono">90°</text>
+                    <text x="3" y="93" fontSize="6.5" fill="#4A5568" fontWeight="black" className="font-mono">180°</text>
+                    <text x="81" y="174" fontSize="6.5" fill="#4A5568" fontWeight="black" className="font-mono">270°</text>
+
+                    <defs>
+                      <marker
+                        id="arrow-v1"
+                        viewBox="0 0 10 10"
+                        refX="8"
+                        refY="5"
+                        markerWidth="5"
+                        markerHeight="5"
+                        orient="auto"
+                      >
+                        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#F59E0B" />
+                      </marker>
+                      <marker
+                        id="arrow-v2"
+                        viewBox="0 0 10 10"
+                        refX="8"
+                        refY="5"
+                        markerWidth="5"
+                        markerHeight="5"
+                        orient="auto"
+                      >
+                        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#EF4444" />
+                      </marker>
+                      <marker
+                        id="arrow-v3"
+                        viewBox="0 0 10 10"
+                        refX="8"
+                        refY="5"
+                        markerWidth="5"
+                        markerHeight="5"
+                        orient="auto"
+                      >
+                        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#3B82F6" />
+                      </marker>
+                      <marker
+                        id="arrow-i"
+                        viewBox="0 0 10 10"
+                        refX="8"
+                        refY="5"
+                        markerWidth="5"
+                        markerHeight="5"
+                        orient="auto"
+                      >
+                        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#10B981" />
+                      </marker>
+                    </defs>
+
+                    {loadPhases === 3 ? (
+                      // 3-Phase balanced vectors
+                      <>
+                        {/* Voltages (V1, V2, V3) */}
+                        <line x1={cx} y1={cy} x2={v1X} y2={v1Y} stroke="#F59E0B" strokeWidth="2.5" markerEnd="url(#arrow-v1)" />
+                        <line x1={cx} y1={cy} x2={v2X} y2={v2Y} stroke="#EF4444" strokeWidth="2.5" markerEnd="url(#arrow-v2)" />
+                        <line x1={cx} y1={cy} x2={v3X} y2={v3Y} stroke="#3B82F6" strokeWidth="2.5" markerEnd="url(#arrow-v3)" />
+
+                        {/* Currents (I1, I2, I3) lagging respective voltages by theta */}
+                        <line x1={cx} y1={cy} x2={i1X} y2={i1Y} stroke="#10B981" strokeWidth="1.8" markerEnd="url(#arrow-i)" />
+                        <line x1={cx} y1={cy} x2={i2X} y2={i2Y} stroke="#059669" strokeWidth="1.8" markerEnd="url(#arrow-i)" />
+                        <line x1={cx} y1={cy} x2={i3X} y2={i3Y} stroke="#34D399" strokeWidth="1.8" markerEnd="url(#arrow-i)" />
+
+                        {/* Text annotations of values */}
+                        <text x={v1X + 4} y={v1Y + 3} fontSize="7.5" fill="#FBBF24" fontWeight="black" className="font-mono">L1</text>
+                        <text x={v2X - 10} y={v2Y + 8} fontSize="7.5" fill="#EF4444" fontWeight="black" className="font-mono">L2</text>
+                        <text x={v3X - 10} y={v3Y - 4} fontSize="7.5" fill="#60A5FA" fontWeight="black" className="font-mono">L3</text>
+                      </>
+                    ) : (
+                      // Single-Phase vectors
+                      <>
+                        {/* Line voltage V_L1 */}
+                        <line x1={cx} y1={cy} x2={v1SingleX} y2={v1SingleY} stroke="#F59E0B" strokeWidth="2.5" markerEnd="url(#arrow-v1)" />
+                        {/* Neutral vector */}
+                        <line x1={cx} y1={cy} x2={nSingleX} y2={nSingleY} stroke="#3B82F6" strokeWidth="2" strokeDasharray="3,2" markerEnd="url(#arrow-v3)" />
+                        
+                        {/* Current vector I_L1 lagging V_L1 */}
+                        <line x1={cx} y1={cy} x2={i1SingleX} y2={i1SingleY} stroke="#10B981" strokeWidth="1.8" markerEnd="url(#arrow-i)" />
+
+                        <text x={v1SingleX + 4} y={v1SingleY + 3} fontSize="7.5" fill="#FBBF24" fontWeight="black" className="font-mono">L1</text>
+                        <text x={nSingleX - 10} y={nSingleY + 3} fontSize="7.5" fill="#60A5FA" fontWeight="bold" className="font-mono">N</text>
+                        <text x={i1SingleX + 5} y={i1SingleY + 8} fontSize="7.5" fill="#10B981" fontWeight="bold" className="font-mono">I1</text>
+                      </>
+                    )}
+                  </svg>
+                </div>
+
+                <div className="w-full mt-2 pt-2 border-t border-slate-850 flex flex-wrap justify-center gap-x-2.5 gap-y-0.5">
+                  <div className="flex items-center gap-1 text-[8.5px] text-slate-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                    <span>Voltage</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[8.5px] text-slate-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                    <span>Current</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[8.5px] text-slate-400 font-mono">
+                    <span>θ≈{thetaDeg.toFixed(0)}°</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* TAB B: CABLE CROSS-SECTION VISUAL */}

@@ -54,6 +54,17 @@ export interface UserAnalytics {
   checksRun: number;
 }
 
+export interface BulkLoadEntry {
+  id: string;
+  name: string;
+  kw: number;
+  pf: number;
+  phases: number;
+  volt: number;
+  isContinuous: boolean;
+  calculatedCurrent: number;
+}
+
 export interface CalculationResult {
   base: string;
   design: string;
