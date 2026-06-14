@@ -1121,11 +1121,25 @@ export default function App() {
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all border cursor-pointer ${
                 activePage === item.id
                   ? "bg-amber-400 border-amber-450 text-slate-900 font-extrabold shadow-sm"
-                  : "bg-white/10 hover:bg-white/20 border-white/5 text-white"
+                  : item.id === "services"
+                    ? "bg-gradient-to-r from-amber-500/25 to-amber-600/10 hover:from-amber-500 hover:to-amber-600 border-amber-500/40 hover:border-amber-500 text-amber-300 hover:text-slate-950 font-bold shadow animate-pulse-subtle"
+                    : "bg-white/10 hover:bg-white/20 border-white/5 text-white"
               }`}
             >
-              {item.icon}
-              <span>{item.label}</span>
+              {item.id === "services" ? (
+                <>
+                  <Compass className={`w-3.5 h-3.5 animate-spin-slow ${activePage === item.id ? "text-slate-900" : "text-amber-400"}`} />
+                  <span>{item.label}</span>
+                  <span className="text-[7.5px] bg-amber-400 text-slate-950 font-black px-1 rounded uppercase tracking-wider scale-95 shrink-0 select-none">
+                    Core
+                  </span>
+                </>
+              ) : (
+                <>
+                  {item.icon}
+                  <span>{item.label}</span>
+                </>
+              )}
             </button>
           ))}
         </nav>
@@ -1307,14 +1321,19 @@ export default function App() {
             <div className="space-y-1">
               <button
                 onClick={() => setActivePage("services")}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg text-left transition cursor-pointer ${
+                className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg text-left transition cursor-pointer border ${
                   activePage === "services"
-                    ? "bg-amber-400 text-slate-900 font-extrabold shadow-sm"
-                    : "text-slate-600 dark:text-slate-350 hover:bg-slate-105 dark:hover:bg-slate-850"
+                    ? "bg-amber-400 border-amber-450 text-slate-900 font-extrabold shadow-sm"
+                    : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80 border-amber-500/20 bg-amber-500/5"
                 }`}
               >
-                <Compass className={`w-3.5 h-3.5 ${activePage === "services" ? "text-slate-900" : "text-emerald-500"}`} />
-                <span>Services Menu</span>
+                <span className="flex items-center gap-2">
+                  <Compass className={`w-3.5 h-3.5 ${activePage === "services" ? "text-slate-900" : "text-amber-500 animate-spin-slow"}`} />
+                  <span className="font-bold">Services Menu</span>
+                </span>
+                <span className="text-[7.5px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded uppercase tracking-wider animate-pulse">
+                  Matrix
+                </span>
               </button>
               <button
                 onClick={() => setActivePage("compliance")}
@@ -3052,6 +3071,7 @@ export default function App() {
                 setActivePage("ai-assistant");
               }}
               onNavigateToAssistant={() => setActivePage("ai-assistant")}
+              onNavigateToServices={() => setActivePage("services")}
             />
           )}
 

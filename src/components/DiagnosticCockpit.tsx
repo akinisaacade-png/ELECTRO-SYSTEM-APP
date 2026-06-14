@@ -50,6 +50,7 @@ import { ElectroOrchestrator, AgentType, RoutingOutput } from "../utils/ElectroO
 interface DiagnosticCockpitProps {
   onAskAI: (prompt: string) => void;
   onNavigateToAssistant?: () => void;
+  onNavigateToServices?: () => void;
 }
 
 interface Message {
@@ -67,7 +68,7 @@ interface Message {
   };
 }
 
-export default function DiagnosticCockpit({ onAskAI, onNavigateToAssistant }: DiagnosticCockpitProps) {
+export default function DiagnosticCockpit({ onAskAI, onNavigateToAssistant, onNavigateToServices }: DiagnosticCockpitProps) {
   // Primary State
   const [userInput, setUserInput] = useState("");
   const [isRouting, setIsRouting] = useState(false);
@@ -971,7 +972,7 @@ export default function DiagnosticCockpit({ onAskAI, onNavigateToAssistant }: Di
                 Direct Run
               </span>
             </div>
-            <div className="grid grid-cols-1 gap-1.5 text-left">
+            <div className="grid grid-cols-1 gap-1.5 text-left font-sans">
               <button
                 onClick={triggerVoltageDropCalculation}
                 className="py-2 px-3 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl text-3xs font-black uppercase text-indigo-650 dark:text-indigo-400 flex items-center justify-between transition cursor-pointer"
@@ -983,7 +984,7 @@ export default function DiagnosticCockpit({ onAskAI, onNavigateToAssistant }: Di
               </button>
               <button
                 onClick={triggerFaultCurrentCalculation}
-                className="py-2 px-3 bg-white hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl text-3xs font-black uppercase text-amber-550 dark:text-amber-450 flex items-center justify-between transition cursor-pointer"
+                className="py-2 px-3 bg-white hover:bg-slate-105 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl text-3xs font-black uppercase text-amber-550 dark:text-amber-450 flex items-center justify-between transition cursor-pointer"
               >
                 <span className="flex items-center gap-1.5">
                   <Zap className="w-3.5 h-3.5 shrink-0 animate-pulse text-amber-500" /> Transformer Fault I
@@ -992,12 +993,23 @@ export default function DiagnosticCockpit({ onAskAI, onNavigateToAssistant }: Di
               </button>
               <button
                 onClick={triggerAutomatedTestProcedure}
-                className="py-2 px-3 bg-white hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl text-3xs font-black uppercase text-emerald-600 dark:text-emerald-400 flex items-center justify-between transition cursor-pointer"
+                className="py-2 px-3 bg-white hover:bg-slate-105 dark:bg-slate-900 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl text-3xs font-black uppercase text-emerald-600 dark:text-emerald-400 flex items-center justify-between transition cursor-pointer"
               >
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-500" /> Test Workflows
                 </span>
                 <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+              <button
+                onClick={onNavigateToServices}
+                className="py-2.5 px-3 bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/20 border border-amber-500/20 hover:border-amber-500/40 rounded-xl text-3xs font-black uppercase text-amber-700 dark:text-amber-400 flex items-center justify-between transition cursor-pointer"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Compass className="w-3.5 h-3.5 shrink-0 text-amber-500 animate-spin-slow" /> More Sizing &amp; Services
+                </span>
+                <span className="flex items-center gap-1 text-[8.5px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded uppercase tracking-wider shadow-xs">
+                  Menu <ArrowRight className="w-2.5 h-2.5" />
+                </span>
               </button>
             </div>
           </div>

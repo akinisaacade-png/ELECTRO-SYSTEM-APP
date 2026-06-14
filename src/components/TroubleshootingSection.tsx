@@ -42,11 +42,12 @@ import DiagnosticCockpit from "./DiagnosticCockpit";
 interface TroubleshootingSectionProps {
   onAskAI: (prompt: string) => void;
   onNavigateToAssistant?: () => void;
+  onNavigateToServices?: () => void;
 }
 
 type TabType = "cockpit" | "wizard" | "resources" | "solutions";
 
-export default function TroubleshootingSection({ onAskAI, onNavigateToAssistant }: TroubleshootingSectionProps) {
+export default function TroubleshootingSection({ onAskAI, onNavigateToAssistant, onNavigateToServices }: TroubleshootingSectionProps) {
   const [activeTab, setActiveTab] = useState<TabType>("cockpit");
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -360,6 +361,30 @@ export default function TroubleshootingSection({ onAskAI, onNavigateToAssistant 
         </div>
       </div>
 
+      {/* Services Menu Connection Callout */}
+      <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-indigo-500/5 border border-amber-500/20 p-5 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm animate-fade-in font-sans">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 bg-amber-500/15 text-amber-500 rounded-2xl shrink-0 border border-amber-500/25">
+            <Compass className="w-5 h-5 animate-spin-slow" />
+          </div>
+          <div>
+            <h4 className="text-xs font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider">
+              Connected Workspace: Services Matrix Sizer
+            </h4>
+            <p className="text-[11px] text-slate-650 dark:text-slate-300 leading-relaxed max-w-2xl font-medium mt-0.5">
+              Access modular sub-distribution sizing models, lighting fixture averages (Lumen Method), and download standard technical reference PDFs. Synchronized directly with regional safety regulatory guidelines (NEC, IEC, BS 7671).
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onNavigateToServices}
+          className="px-4.5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 hover:brightness-110 font-black text-3xs uppercase tracking-wider rounded-xl transition cursor-pointer shrink-0 shadow-sm flex items-center gap-1.5"
+        >
+          <span>Explore Services Matrix</span>
+          <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+        </button>
+      </div>
+
       {/* Tabs Menu */}
       <div className="flex flex-wrap border-b border-slate-200 dark:border-slate-800 gap-2">
         <button
@@ -413,6 +438,7 @@ export default function TroubleshootingSection({ onAskAI, onNavigateToAssistant 
         <DiagnosticCockpit 
           onAskAI={onAskAI} 
           onNavigateToAssistant={onNavigateToAssistant} 
+          onNavigateToServices={onNavigateToServices}
         />
       )}
 
