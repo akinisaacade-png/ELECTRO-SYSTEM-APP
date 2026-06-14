@@ -39,7 +39,8 @@ import {
   Sparkles,
   Loader2,
   Library,
-  Layers
+  Layers,
+  Wrench
 } from "lucide-react";
 import CourseAnalytics from "./components/CourseAnalytics";
 import AIAssistant from "./components/AIAssistant";
@@ -49,6 +50,7 @@ import VisualizerCard from "./components/VisualizerCard";
 import ElectricalSymbols from "./components/ElectricalSymbols";
 import UnitConverter from "./components/UnitConverter";
 import ServicesMenu from "./components/ServicesMenu";
+import TroubleshootingSection from "./components/TroubleshootingSection";
 import {
   ResponsiveContainer,
   LineChart,
@@ -1110,6 +1112,7 @@ export default function App() {
             { id: "learning", label: "Learning Center", icon: <BookOpen className="w-3.5 h-3.5" /> },
             { id: "library", label: "Engineering Library", icon: <Library className="w-3.5 h-3.5" /> },
             { id: "symbols", label: "Symbols", icon: <Layers className="w-3.5 h-3.5" /> },
+            { id: "troubleshooting", label: "Diagnostics & Faults", icon: <Wrench className="w-3.5 h-3.5" /> },
             { id: "subscription", label: "Premium License", icon: <Gift className="w-3.5 h-3.5" /> }
           ].map((item) => (
             <button
@@ -1358,6 +1361,20 @@ export default function App() {
               >
                 <Layers className={`w-3.5 h-3.5 ${activePage === "symbols" ? "text-slate-900" : "text-emerald-500"}`} />
                 <span>Electrical Symbols</span>
+              </button>
+              <button
+                onClick={() => {
+                  setActivePage("troubleshooting");
+                  trackActionOnBackend("view_troubleshooting");
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg text-left transition cursor-pointer ${
+                  activePage === "troubleshooting"
+                    ? "bg-amber-400 text-slate-900 font-extrabold shadow-sm"
+                    : "text-slate-600 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-850"
+                }`}
+              >
+                <Wrench className={`w-3.5 h-3.5 ${activePage === "troubleshooting" ? "text-slate-900" : "text-emerald-500"}`} />
+                <span>Diagnostics &amp; Faults</span>
               </button>
               <button
                 onClick={downloadCalculationsReport}
@@ -3025,6 +3042,17 @@ export default function App() {
           {/* QUICK UNIT CONVERTER TAB */}
           {activePage === "converter" && (
             <UnitConverter />
+          )}
+
+          {/* TROUBLESHOOTING & SOLUTIONS SECTION */}
+          {activePage === "troubleshooting" && (
+            <TroubleshootingSection
+              onAskAI={(prompt) => {
+                setAiServicePrompt(prompt);
+                setActivePage("ai-assistant");
+              }}
+              onNavigateToAssistant={() => setActivePage("ai-assistant")}
+            />
           )}
 
           {/* SERVICES NAVIGATION SUITE MENU */}
