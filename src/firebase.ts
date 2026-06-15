@@ -1,11 +1,48 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
+import { getStripePayments, createCheckoutSession } from '@stripe/firestore-stripe-payments';
 import firebaseConfig from "../firebase-applet-config.json";
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth(app);
+
+// Initialize Stripe Payments Extension
+export const stripePayments = getStripePayments(app, {
+  productsCollection: 'products',
+  customersCollection: 'customers',
+});
+
+// Price IDs provided
+export const PRICE_IDS = {
+  MONTHLY: 'price_1TiOSZBMbxh6jv0CPBbMA11B', // $29.99/mo
+  YEARLY: 'price_1TiOSZBMbxh6jv0CFWshMKFt',  // $299.99/yr
+};
+
+/**
+ * Triggers the Stripe Checkout redirect for a selected tier
+ * @param priceId The Stripe Price ID to purchase
+ */
+export const checkout = async (priceId: string) => {
+  try {
+    const session = await createCheckoutSession(stripePayments, {
+      price: priceId,
+      success_url: window.location.origin + '?session_id={CHECKOUT_SESSION_ID}',
+      cancel_url: window.location.origin,
+    });
+    
+    // Redirect user to Stripe Hosted Checkout Page
+    if (session.url) {
+      window.location.assign(session.url);
+    } else {
+      throw new Error("No URL returned from checkout session creation.");
+    }
+  } catch (error) {
+    console.error("Stripe Checkout Error: ", error);
+    alert("Could not initiate checkout. Please try again.");
+  }
+};
 
 // Error Handling from Firebase Integration Skill
 export enum OperationType {

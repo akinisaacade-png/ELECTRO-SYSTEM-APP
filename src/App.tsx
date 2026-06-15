@@ -47,7 +47,8 @@ import {
   Trash2,
   ListPlus,
   Pin,
-  Scale
+  Scale,
+  CreditCard
 } from "lucide-react";
 import CourseAnalytics from "./components/CourseAnalytics";
 import AIAssistant from "./components/AIAssistant";
@@ -58,6 +59,7 @@ import ElectricalSymbols from "./components/ElectricalSymbols";
 import UnitConverter from "./components/UnitConverter";
 import ServicesMenu from "./components/ServicesMenu";
 import TroubleshootingSection from "./components/TroubleshootingSection";
+import { PremiumUpgradePanel } from "./components/PremiumUpgradePanel";
 import {
   ResponsiveContainer,
   LineChart,
@@ -75,7 +77,9 @@ import {
   auth,
   db,
   handleFirestoreError,
-  OperationType
+  OperationType,
+  checkout,
+  PRICE_IDS
 } from "./firebase";
 import {
   signInWithEmailAndPassword,
@@ -4649,6 +4653,14 @@ export default function App() {
                 </div>
               )}
 
+              {/* Premium Direct Upgrade Dashboard */}
+              <div className="max-w-md mx-auto space-y-4">
+                <div className="text-center font-bold text-xs uppercase tracking-widest text-slate-400">
+                  Stripe Checkout Control Center
+                </div>
+                <PremiumUpgradePanel />
+              </div>
+
               {/* Pricing Cards Comparison */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
                 <div className="bg-white dark:bg-slate-850 rounded-xl p-6 border border-slate-150 dark:border-slate-800 space-y-4">
@@ -4681,19 +4693,27 @@ export default function App() {
                     </li>
                   </ul>
 
-                  <button
-                    onClick={() => {
-                      setStripeForm({
-                        ...stripeForm,
-                        selectedPlan: "monthly",
-                        price: "$29.99"
-                      });
-                      setAuthView("stripe");
-                    }}
-                    className="w-full bg-slate-700 hover:bg-slate-850 text-white font-bold text-xs py-2 rounded-lg cursor-pointer transition text-center"
-                  >
-                    Select Monthly Plan
-                  </button>
+                  <div className="space-y-2 pt-1">
+                    <button
+                      onClick={() => checkout(PRICE_IDS.MONTHLY)}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-lg cursor-pointer transition text-center flex items-center justify-center gap-2 shadow"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" /> Secure Stripe Checkout
+                    </button>
+                    <button
+                      onClick={() => {
+                        setStripeForm({
+                          ...stripeForm,
+                          selectedPlan: "monthly",
+                          price: "$29.99"
+                        });
+                        setAuthView("stripe");
+                      }}
+                      className="w-full bg-slate-700 hover:bg-slate-850 text-white font-bold text-xs py-2 rounded-lg cursor-pointer transition text-center"
+                    >
+                      Select Monthly Plan (Mock Sandbox)
+                    </button>
+                  </div>
                 </div>
 
                 <div className="bg-white dark:bg-slate-850 rounded-xl p-6 border-2 border-amber-400 space-y-4 relative overflow-hidden">
@@ -4733,19 +4753,27 @@ export default function App() {
                     </li>
                   </ul>
 
-                  <button
-                    onClick={() => {
-                      setStripeForm({
-                        ...stripeForm,
-                        selectedPlan: "yearly",
-                        price: "$299.99"
-                      });
-                      setAuthView("stripe");
-                    }}
-                    className="w-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold text-xs py-2 rounded-lg cursor-pointer transition text-center"
-                  >
-                    Get Annual Core License
-                  </button>
+                  <div className="space-y-2 pt-1">
+                    <button
+                      onClick={() => checkout(PRICE_IDS.YEARLY)}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-lg cursor-pointer transition text-center flex items-center justify-center gap-2 shadow"
+                    >
+                      <CreditCard className="w-3.5 h-3.5 animate-pulse" /> Secure Stripe Checkout
+                    </button>
+                    <button
+                      onClick={() => {
+                        setStripeForm({
+                          ...stripeForm,
+                          selectedPlan: "yearly",
+                          price: "$299.99"
+                        });
+                        setAuthView("stripe");
+                      }}
+                      className="w-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold text-xs py-2 rounded-lg cursor-pointer transition text-center"
+                    >
+                      Get Annual Core License (Mock Sandbox)
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
