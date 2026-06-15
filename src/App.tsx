@@ -111,6 +111,80 @@ export default function App() {
   // Premium workflow
   const [isPremium, setIsPremium] = useState<boolean>(false);
   const [premiumUser, setPremiumUser] = useState<{ name: string; email: string } | null>(null);
+  const [stripeLoading, setStripeLoading] = useState<string | null>(null);
+  const [stripeLoadingText, setStripeLoadingText] = useState<string | null>(null);
+
+  // Monitor success postMessages from a completed popup / new checkout window redirection
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'STRIPE_CHECKOUT_SUCCESS') {
+        triggerToast("🎉 Premium license active! High-thinking reasoning core activated!");
+        setIsPremium(true);
+        setPremiumUser({
+          name: auth.currentUser?.displayName || "Licensed Premium Engineer",
+          email: auth.currentUser?.email || ""
+        });
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // Check if we are running inside the popup/redirect window as the checkout success landing page
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const sessionId = searchParams.get('session_id');
+    if (sessionId) {
+      if (window.opener) {
+        try {
+          window.opener.postMessage({ type: 'STRIPE_CHECKOUT_SUCCESS', sessionId }, window.location.origin);
+        } catch (e) {
+          console.error("Could not notify parent window", e);
+        }
+        setTimeout(() => {
+          try {
+            window.close();
+          } catch (e) {
+            console.error(e);
+          }
+        }, 1500);
+      } else {
+        triggerToast("🎉 Premium license successfully loaded! ✓");
+        setIsPremium(true);
+        // Clean URL parameter so it doesn't stay in the address bar
+        const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+        window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+      }
+    }
+  }, []);
+
+  const handleStripeCheckout = async (priceId: string) => {
+    await checkout(priceId, (status, message) => {
+      switch (status) {
+        case 'loading':
+          setStripeLoading(priceId);
+          setStripeLoadingText("Initializing security handshakes...");
+          break;
+        case 'redirecting':
+          setStripeLoadingText("Redirecting to secure Stripe Checkout...");
+          break;
+        case 'success':
+          setStripeLoading(null);
+          setStripeLoadingText(null);
+          break;
+        case 'closed':
+          setStripeLoading(null);
+          setStripeLoadingText(null);
+          triggerToast(message || "Stripe Checkout tab was closed before completion.");
+          break;
+        case 'error':
+          setStripeLoading(null);
+          setStripeLoadingText(null);
+          break;
+      }
+    });
+  };
 
   // Stripe payments checkout mock state
   const [stripeForm, setStripeForm] = useState({
@@ -4695,10 +4769,12 @@ export default function App() {
 
                   <div className="space-y-2 pt-1">
                     <button
-                      onClick={() => checkout(PRICE_IDS.MONTHLY)}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-lg cursor-pointer transition text-center flex items-center justify-center gap-2 shadow"
+                      onClick={() => handleStripeCheckout(PRICE_IDS.MONTHLY)}
+                      disabled={stripeLoading !== null}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-400 text-white font-black text-xs py-2.5 rounded-lg cursor-pointer transition text-center flex items-center justify-center gap-2 shadow"
                     >
-                      <CreditCard className="w-3.5 h-3.5" /> Secure Stripe Checkout
+                      <CreditCard className="w-3.5 h-3.5" /> 
+                      {stripeLoading === PRICE_IDS.MONTHLY ? stripeLoadingText || 'Connecting...' : 'Secure Stripe Checkout'}
                     </button>
                     <button
                       onClick={() => {
@@ -4755,10 +4831,12 @@ export default function App() {
 
                   <div className="space-y-2 pt-1">
                     <button
-                      onClick={() => checkout(PRICE_IDS.YEARLY)}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-lg cursor-pointer transition text-center flex items-center justify-center gap-2 shadow"
+                      onClick={() => handleStripeCheckout(PRICE_IDS.YEARLY)}
+                      disabled={stripeLoading !== null}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:text-slate-400 text-white font-black text-xs py-2.5 rounded-lg cursor-pointer transition text-center flex items-center justify-center gap-2 shadow"
                     >
-                      <CreditCard className="w-3.5 h-3.5 animate-pulse" /> Secure Stripe Checkout
+                      <CreditCard className="w-3.5 h-3.5 animate-pulse" /> 
+                      {stripeLoading === PRICE_IDS.YEARLY ? stripeLoadingText || 'Connecting...' : 'Secure Stripe Checkout'}
                     </button>
                     <button
                       onClick={() => {

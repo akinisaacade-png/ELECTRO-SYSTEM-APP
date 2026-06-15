@@ -3,11 +3,34 @@ import { checkout, PRICE_IDS } from '../firebase';
 
 export const PremiumUpgradePanel: React.FC = () => {
   const [loadingPrice, setLoadingPrice] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const handleSubscribe = async (priceId: string) => {
-    setLoadingPrice(priceId);
-    await checkout(priceId);
-    setLoadingPrice(null);
+    await checkout(priceId, (status, message) => {
+      switch (status) {
+        case 'loading':
+          setLoadingPrice(priceId);
+          setStatusMessage("Connecting secure checkout server...");
+          break;
+        case 'redirecting':
+          setStatusMessage("Redirecting to Stripe Checkout...");
+          break;
+        case 'success':
+          setLoadingPrice(null);
+          setStatusMessage("Premium License successfully loaded! ★");
+          setTimeout(() => setStatusMessage(null), 5000);
+          break;
+        case 'closed':
+          setLoadingPrice(null);
+          setStatusMessage(null);
+          alert(message || "The Stripe Checkout window was closed before completion.");
+          break;
+        case 'error':
+          setLoadingPrice(null);
+          setStatusMessage(null);
+          break;
+      }
+    });
   };
 
   return (
@@ -18,6 +41,13 @@ export const PremiumUpgradePanel: React.FC = () => {
       <p className="text-sm text-slate-400 mb-6 leading-relaxed">
         Upgrade to a premium license to activate complete rulebases for BS 7671, NEC NFPA, and advanced engineering modules.
       </p>
+
+      {statusMessage && (
+        <div className="mb-6 p-3 bg-slate-850 border border-amber-500/30 rounded-lg text-xs flex items-center gap-2 text-amber-200">
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+          <span>{statusMessage}</span>
+        </div>
+      )}
 
       <div className="space-y-4">
         {/* Monthly Card */}
