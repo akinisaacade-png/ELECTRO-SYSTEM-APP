@@ -12,7 +12,8 @@ import {
   Cable,
   UserAnalytics,
   CalculationResult,
-  BulkLoadEntry
+  BulkLoadEntry,
+  PinnedCalculation
 } from "./types";
 import {
   Zap,
@@ -44,7 +45,9 @@ import {
   Wrench,
   Plus,
   Trash2,
-  ListPlus
+  ListPlus,
+  Pin,
+  Scale
 } from "lucide-react";
 import CourseAnalytics from "./components/CourseAnalytics";
 import AIAssistant from "./components/AIAssistant";
@@ -95,7 +98,7 @@ export default function App() {
   // Shared AI assistant pre-filled prompt from services navigation matrix
   const [aiServicePrompt, setAiServicePrompt] = useState<string | null>(null);
   // Calculators page sub-tabs
-  const [calcTab, setCalcTab] = useState<"load" | "cable" | "vdrop" | "conduit" | "gemini-sizer">("load");
+  const [calcTab, setCalcTab] = useState<"load" | "cable" | "vdrop" | "conduit" | "gemini-sizer" | "compare">("load");
   // Region synchronization
   const [activeRegion, setActiveRegion] = useState<string>("UK");
   // Global Metric / Imperial Toggle
@@ -185,6 +188,161 @@ export default function App() {
   const [bulkPhases, setBulkPhases] = useState<number>(3);
   const [bulkVolt, setBulkVolt] = useState<string>("415");
   const [bulkContinuous, setBulkContinuous] = useState<boolean>(true);
+
+  // Pinned Calculations for Side-by-Side Comparison View
+  const [pinnedCalcs, setPinnedCalcs] = useState<PinnedCalculation[]>([
+    {
+      id: "pin-1",
+      name: "Standard 75kW Chiller (Rulebase: BS 7671)",
+      type: "load",
+      timestamp: "14:15:30",
+      region: "UK",
+      isImperial: false,
+      kw: 75,
+      pf: 0.85,
+      phases: 3,
+      volt: 415,
+      ampacity: 125.21,
+      cableSize: "70 mm²",
+      voltageDropPct: 1.48,
+      voltageDropVolts: 6.14,
+      passed: true
+    },
+    {
+      id: "pin-2",
+      name: "High-Temp 90kW Sub-Feed (Rulebase: NEC NFPA 70)",
+      type: "load",
+      timestamp: "14:18:12",
+      region: "US",
+      isImperial: true,
+      kw: 90,
+      pf: 0.82,
+      phases: 3,
+      volt: 480,
+      ampacity: 135.45,
+      cableSize: "3/0 AWG",
+      voltageDropPct: 2.15,
+      voltageDropVolts: 10.32,
+      passed: true
+    },
+    {
+      id: "pin-3",
+      name: "Data Center Singe Phase Server Array (Rulebase: AS/NZS 3000)",
+      type: "load",
+      timestamp: "14:22:04",
+      region: "AU",
+      isImperial: false,
+      kw: 33,
+      pf: 0.98,
+      phases: 1,
+      volt: 240,
+      ampacity: 140.31,
+      cableSize: "95 mm²",
+      voltageDropPct: 3.12,
+      voltageDropVolts: 7.49,
+      passed: false
+    }
+  ]);
+
+  const [compareLeftId, setCompareLeftId] = useState<string>("pin-1");
+  const [compareRightId, setCompareRightId] = useState<string>("pin-2");
+
+  const [leftCompare, setLeftCompare] = useState({
+    name: "Comparison Conductor A",
+    region: "UK",
+    isImperial: false,
+    kw: 75,
+    pf: 0.85,
+    phases: 3,
+    volt: 415,
+    length: 50,
+  });
+
+  const [rightCompare, setRightCompare] = useState({
+    name: "Comparison Conductor B",
+    region: "US",
+    isImperial: true,
+    kw: 90,
+    pf: 0.82,
+    phases: 3,
+    volt: 480,
+    length: 150,
+  });
+
+  useEffect(() => {
+    const pin = pinnedCalcs.find(p => p.id === compareLeftId);
+    if (pin) {
+      setLeftCompare({
+        name: pin.name,
+        region: pin.region,
+        isImperial: pin.isImperial,
+        kw: pin.kw || 75,
+        pf: pin.pf || 0.85,
+        phases: pin.phases || 3,
+        volt: pin.volt || 415,
+        length: pin.isImperial ? 150 : 50,
+      });
+    }
+  }, [compareLeftId, pinnedCalcs]);
+
+  useEffect(() => {
+    const pin = pinnedCalcs.find(p => p.id === compareRightId);
+    if (pin) {
+      setRightCompare({
+        name: pin.name,
+        region: pin.region,
+        isImperial: pin.isImperial,
+        kw: pin.kw || 90,
+        pf: pin.pf || 0.82,
+        phases: pin.phases || 3,
+        volt: pin.volt || 480,
+        length: pin.isImperial ? 150 : 50,
+      });
+    }
+  }, [compareRightId, pinnedCalcs]);
+
+  // Reactive side-by-side comparison solver
+  const getComparisonCableResult = (params: typeof leftCompare) => {
+    // Current calculation
+    let baseCurrent = 0;
+    if (params.phases === 3) {
+      baseCurrent = (params.kw * 1000) / (Math.sqrt(3) * params.volt * params.pf);
+    } else {
+      baseCurrent = (params.kw * 1000) / (params.volt * params.pf);
+    }
+
+    if (isNaN(baseCurrent) || !isFinite(baseCurrent)) {
+      baseCurrent = 0;
+    }
+
+    const designCurrent = baseCurrent * 1.25;
+    const table = params.isImperial ? CABLE_TABLES.awg : CABLE_TABLES.metric;
+    const matchedCable = table.find((c) => c.cap >= designCurrent) || table[table.length - 1];
+
+    const effectiveLenInM = params.isImperial ? (params.length / 3.28084) : params.length;
+    const voltageLoss = (baseCurrent * 2 * matchedCable.r * effectiveLenInM) / 1000;
+    const lossPercentage = (voltageLoss / params.volt) * 100;
+
+    const regConf = REGIONS[params.region] || REGIONS["UK"];
+    const isVdOk = lossPercentage <= regConf.vd_other;
+
+    return {
+      base: baseCurrent.toFixed(2),
+      design: designCurrent.toFixed(2),
+      cable: matchedCable.sz,
+      ampacity: matchedCable.cap,
+      resistance: matchedCable.r,
+      lossPct: lossPercentage.toFixed(2),
+      lossVolts: voltageLoss.toFixed(2),
+      limit: regConf.vd_other,
+      passed: isVdOk,
+      std: regConf.std,
+      ref: regConf.ref
+    };
+  };
+
+  const leftResultComp = getComparisonCableResult(leftCompare);
+  const rightResultComp = getComparisonCableResult(rightCompare);
 
   // Quick Load values (Dashboard page)
   const [quickKw, setQuickKw] = useState(45);
@@ -614,6 +772,82 @@ export default function App() {
     if (found) {
       triggerToast(`Removed load: "${found.name}"`);
     }
+  };
+
+  const handlePinCalculation = (type: "load" | "cable" | "vdrop") => {
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    let name = "";
+    let newPin: PinnedCalculation;
+
+    if (type === "load") {
+      if (!loadResult) {
+        triggerToast("Please run the line-to-line load calculation before pinning!");
+        return;
+      }
+      name = `Load Sizing (${loadKw}kW / ${loadVolt}V)`;
+      newPin = {
+        id: "pin-" + Date.now(),
+        name,
+        type: "load",
+        timestamp,
+        region: activeRegion,
+        isImperial,
+        kw: loadKw,
+        pf: loadPf,
+        phases: loadPhases,
+        volt: loadVolt,
+        ampacity: parseFloat(loadResult.design),
+        cableSize: loadResult.cable,
+        voltageDropPct: 1.5,
+        voltageDropVolts: parseFloat(((loadVolt * 1.5) / 100).toFixed(2)),
+        passed: true
+      };
+    } else if (type === "cable") {
+      if (!csResult) {
+        triggerToast("Please run the cable sizing calculation before pinning!");
+        return;
+      }
+      name = `Cable sizing (${csAmp}A on ${csResult.cable})`;
+      newPin = {
+        id: "pin-" + Date.now(),
+        name,
+        type: "cable",
+        timestamp,
+        region: activeRegion,
+        isImperial,
+        volt: ["US", "CA"].includes(activeRegion) ? 480 : 415,
+        ampacity: csAmp,
+        cableSize: csResult.cable,
+        voltageDropPct: parseFloat(csResult.lossPct),
+        voltageDropVolts: parseFloat((( (["US", "CA"].includes(activeRegion) ? 480 : 415) * parseFloat(csResult.lossPct)) / 100).toFixed(2)),
+        passed: csResult.vdOk
+      };
+    } else { // "vdrop"
+      if (!vdResult) {
+        triggerToast("Please run the voltage drop calculation before pinning!");
+        return;
+      }
+      const sizeStr = `${isImperial ? vdSize + " AWG" : vdSize + " mm²"}`;
+      name = `V-Drop verification (${vdAmp}A / ${sizeStr})`;
+      newPin = {
+        id: "pin-" + Date.now(),
+        name,
+        type: "vdrop",
+        timestamp,
+        region: activeRegion,
+        isImperial,
+        volt: vdVolt,
+        ampacity: vdAmp,
+        cableSize: isImperial ? `${vdSize} AWG` : `${vdSize} mm²`,
+        voltageDropPct: parseFloat(vdResult.dropPct),
+        voltageDropVolts: parseFloat(vdResult.dropVolts),
+        passed: vdResult.passed
+      };
+    }
+
+    setPinnedCalcs((prev) => [...prev, newPin]);
+    triggerToast(`Pinned current calculation: "${newPin.name}"!`);
+    trackActionOnBackend("pin_calculation");
   };
 
   const runCableSizingTool = () => {
@@ -1885,14 +2119,14 @@ export default function App() {
               <div className="bg-white dark:bg-slate-850 p-5 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
                   <Globe className="w-4 h-4 text-emerald-500" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
                     Jurisdiction Reference Matrix
                   </h4>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-440 font-semibold uppercase">
+                      <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold uppercase">
                         <th className="py-2.5 px-3">State</th>
                         <th className="py-2.5 px-3">Rulebase Standard</th>
                         <th className="py-2.5 px-3">Standard Frequency</th>
@@ -1987,6 +2221,17 @@ export default function App() {
                 >
                   <Sparkles className={`w-3.5 h-3.5 ${calcTab === "gemini-sizer" ? "text-amber-500" : "text-slate-450"}`} />
                   <span>AI Wire &amp; Conduit Sizer</span>
+                </button>
+                <button
+                  onClick={() => setCalcTab("compare")}
+                  className={`px-5 py-3 text-xs font-black border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                    calcTab === "compare"
+                      ? "border-amber-500 text-amber-600 dark:text-amber-400 font-extrabold bg-amber-500/5"
+                      : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                  }`}
+                >
+                  <Scale className={`w-3.5 h-3.5 ${calcTab === "compare" ? "text-amber-500" : "text-slate-450"}`} />
+                  <span>Comparison Center</span>
                 </button>
               </div>
 
@@ -2227,9 +2472,18 @@ export default function App() {
                             <span className="w-2.5 h-2.5 rounded-full bg-lime-500 animate-pulse inline-block" />
                             Final Multi-Phase Sizing Audit Results
                           </strong>
-                          <span className="text-[10px] uppercase font-bold text-lime-650 dark:text-lime-450">
-                            Verified Standard Output
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handlePinCalculation("load")}
+                              className="text-[10px] uppercase font-black tracking-wider bg-amber-500 hover:bg-amber-600 text-slate-900 px-2.5 py-1 rounded-md inline-flex items-center gap-1 transition cursor-pointer select-none font-sans"
+                            >
+                              <Pin className="w-3 h-3 stroke-[2.5]" /> Pin to Compare
+                            </button>
+                            <span className="text-[10px] uppercase font-bold text-lime-650 dark:text-lime-450 hidden sm:inline">
+                              Verified Standard Output
+                            </span>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -2641,11 +2895,20 @@ export default function App() {
                         <div className="flex justify-between items-center pb-2 border-b border-lime-500/15">
                           <strong className="text-xs font-black text-lime-700 dark:text-lime-400 tracking-wider uppercase flex items-center gap-1.5">
                             <span className="w-2.5 h-2.5 rounded-full bg-lime-500 animate-pulse inline-block" />
-                            Recommended Conductor Sizing Metric Match
+                            Recommended Conductor Sizing Match
                           </strong>
-                          <span className="text-[10px] uppercase font-bold text-lime-650 dark:text-lime-450">
-                            Verified Cable Output
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handlePinCalculation("cable")}
+                              className="text-[10px] uppercase font-black tracking-wider bg-amber-500 hover:bg-amber-600 text-slate-900 px-2.5 py-1 rounded-md inline-flex items-center gap-1 transition cursor-pointer select-none font-sans"
+                            >
+                              <Pin className="w-3 h-3 stroke-[2.5]" /> Pin to Compare
+                            </button>
+                            <span className="text-[10px] uppercase font-bold text-lime-650 dark:text-lime-450 hidden sm:inline">
+                              Verified Cable Output
+                            </span>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
@@ -2788,13 +3051,22 @@ export default function App() {
                             <span className={`w-2.5 h-2.5 rounded-full ${vdResult.passed ? "bg-lime-500" : "bg-red-500"} animate-pulse inline-block`} />
                             Voltage Loss Drop Report
                           </strong>
-                          <span
-                            className={`text-2xs font-black uppercase px-2 py-0.5 rounded ${
-                              vdResult.passed ? "bg-lime-500/25 text-lime-700 dark:text-lime-400" : "bg-red-500/25 text-red-650 dark:text-red-400"
-                            }`}
-                          >
-                            {vdResult.passed ? "PASSED MATCH ✓" : "REGULATION INFRACTION! ✗"}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handlePinCalculation("vdrop")}
+                              className="text-[10px] uppercase font-black tracking-wider bg-amber-500 hover:bg-amber-600 text-slate-900 px-2.5 py-1 rounded-md inline-flex items-center gap-1 transition cursor-pointer select-none font-sans"
+                            >
+                              <Pin className="w-3 h-3 stroke-[2.5]" /> Pin to Compare
+                            </button>
+                            <span
+                              className={`text-[10px] font-black uppercase px-2 py-1 rounded-md ${
+                                vdResult.passed ? "bg-lime-500/25 text-lime-700 dark:text-lime-450" : "bg-red-500/25 text-red-650 dark:text-red-400"
+                              } hidden sm:inline`}
+                            >
+                              {vdResult.passed ? "PASSED MATCH ✓" : "REGULATION INFRACTION! ✗"}
+                            </span>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
@@ -3342,6 +3614,492 @@ export default function App() {
                 </motion.div>
               )}
 
+              {/* CALC SUB - SIDE BY SIDE COMPARISON MATRIX */}
+              {calcTab === "compare" && (
+                <motion.div
+                  key="compare"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, ease: "easeOut" }}
+                  className="bg-white dark:bg-slate-850 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden border-t-4 border-t-amber-500 space-y-0 font-sans"
+                >
+                  {/* Title Bar */}
+                  <div className="px-6 py-5 bg-amber-500/5 dark:bg-amber-550/2 border-b border-slate-150 dark:border-slate-800/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <h3 className="text-sm font-black text-amber-600 dark:text-amber-400 tracking-wider uppercase flex items-center gap-2.5">
+                      <Scale className="w-5 h-5 text-amber-500" />
+                      Side-By-Side Design Comparison Matrix
+                    </h3>
+                    <span className="text-[10px] font-black tracking-widest px-2.5 py-1 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/25 uppercase">
+                      Live Solver Engine
+                    </span>
+                  </div>
+
+                  <div className="p-6 space-y-6">
+                    {/* Active Pins Catalog */}
+                    <div className="bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-150 dark:border-slate-800 space-y-3">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-200/50 dark:border-slate-800 pb-2">
+                        <h4 className="text-xs font-extrabold uppercase text-slate-700 dark:text-slate-350 tracking-wider flex items-center gap-1.5">
+                          <Pin className="w-3.5 h-3.5 text-amber-500 stroke-[2.5]" />
+                          Pinned Designs Library ({pinnedCalcs.length})
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (pinnedCalcs.length <= 1) {
+                              triggerToast("No custom pins to clear.");
+                              return;
+                            }
+                            setPinnedCalcs([
+                              {
+                                id: "pin-1",
+                                name: "Reset Default BS 7671 Link",
+                                type: "load",
+                                timestamp: "12:00:00",
+                                region: "UK",
+                                isImperial: false,
+                                kw: 75,
+                                pf: 0.85,
+                                phases: 3,
+                                volt: 415,
+                                ampacity: 125.21,
+                                cableSize: "70 mm²",
+                                voltageDropPct: 1.48,
+                                voltageDropVolts: 6.14,
+                                passed: true
+                              }
+                            ]);
+                            setCompareLeftId("pin-1");
+                            setCompareRightId("pin-1");
+                            triggerToast("Cleared user pins catalog.");
+                          }}
+                          className="text-[10px] font-black text-rose-500 dark:text-rose-400 hover:underline cursor-pointer border-none bg-transparent"
+                        >
+                          Clear Custom Library
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {pinnedCalcs.map((pin) => (
+                          <div 
+                            key={pin.id}
+                            className="bg-white dark:bg-slate-900/60 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center gap-2 shadow-3xs"
+                          >
+                            <div className="flex flex-col">
+                              <span className="text-[11px] font-bold text-slate-800 dark:text-slate-100">{pin.name}</span>
+                              <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
+                                {pin.region} · {pin.isImperial ? "Imperial" : "Metric"} · Sized at {pin.timestamp}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (pinnedCalcs.length <= 1) {
+                                  triggerToast("Must retain at least one pinned layout.");
+                                  return;
+                                }
+                                setPinnedCalcs(prev => prev.filter(p => p.id !== pin.id));
+                                triggerToast("Deleted pin.");
+                              }}
+                              className="text-slate-400 hover:text-rose-500 text-xs p-1 cursor-pointer"
+                              title="Delete Pin"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Columns Dropdown Selector */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Left Dropdown */}
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider">Select Left Design Pin</label>
+                        <select
+                          value={compareLeftId}
+                          onChange={(e) => setCompareLeftId(e.target.value)}
+                          className="w-full text-xs font-bold p-2.5 rounded bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100"
+                        >
+                          {pinnedCalcs.map((pin) => (
+                            <option key={pin.id} value={pin.id}>
+                              {pin.name} ({pin.timestamp})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Right Dropdown */}
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider">Select Right Design Pin</label>
+                        <select
+                          value={compareRightId}
+                          onChange={(e) => setCompareRightId(e.target.value)}
+                          className="w-full text-xs font-bold p-2.5 rounded bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100"
+                        >
+                          {pinnedCalcs.map((pin) => (
+                            <option key={pin.id} value={pin.id}>
+                              {pin.name} ({pin.timestamp})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Left & Right Interactive Workspace Columns */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                      
+                      {/* LEFT COLUMN WORKSPACE */}
+                      <div className="bg-slate-50/50 dark:bg-slate-900/20 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-5">
+                        <div className="border-b border-slate-200 dark:border-slate-800 pb-2 flex justify-between items-center">
+                          <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                            Run A: {leftCompare.name.split(' (')[0]}
+                          </span>
+                          <span className="text-[10px] font-mono bg-slate-200/50 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-550 dark:text-slate-400 uppercase">
+                            {leftCompare.region} Code Config
+                          </span>
+                        </div>
+
+                        {/* Interactive Parameters Sliders / Fields */}
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase font-bold text-slate-500 block">System (V)</span>
+                              <input
+                                type="number"
+                                value={leftCompare.volt}
+                                onChange={(e) => setLeftCompare(p => ({ ...p, volt: parseInt(e.target.value) || 415 }))}
+                                className="w-full text-xs p-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-100 font-bold"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase font-bold text-slate-500 block">Power Factor</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.1"
+                                max="1.0"
+                                value={leftCompare.pf}
+                                onChange={(e) => setLeftCompare(p => ({ ...p, pf: parseFloat(e.target.value) || 0.85 }))}
+                                className="w-full text-xs p-1.5 rounded bg-white dark:bg-slate-955 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-100 font-bold"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase font-bold text-slate-500 block">Volt Class</span>
+                              <select
+                                value={leftCompare.phases}
+                                onChange={(e) => setLeftCompare(p => ({ ...p, phases: parseInt(e.target.value) || 3 }))}
+                                className="w-full text-xs p-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-100 font-bold"
+                              >
+                                <option value={3}>3-Phase Balanced</option>
+                                <option value={1}>1-Phase Outlet</option>
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase font-bold text-slate-500 block">Unit Format</span>
+                              <select
+                                value={leftCompare.isImperial ? "imperial" : "metric"}
+                                onChange={(e) => setLeftCompare(p => ({ ...p, isImperial: e.target.value === "imperial" }))}
+                                className="w-full text-xs p-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-850 dark:text-slate-100 font-medium"
+                              >
+                                <option value="metric">Metric (mm², m)</option>
+                                <option value="imperial font-bold font-mono">US/CA (AWG, ft)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Load kW Slider & text */}
+                          <div className="space-y-1 bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800/80">
+                            <div className="flex justify-between items-center text-2xs uppercase font-extrabold text-slate-500">
+                              <span>Sizing Active Load</span>
+                              <span className="font-mono text-xs text-amber-500 font-black">{leftCompare.kw} kW</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="300"
+                              value={leftCompare.kw}
+                              onChange={(e) => setLeftCompare(p => ({ ...p, kw: parseInt(e.target.value) || 1 }))}
+                              className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                            />
+                          </div>
+
+                          {/* Run Length Slider & text */}
+                          <div className="space-y-1 bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800/80">
+                            <div className="flex justify-between items-center text-2xs uppercase font-extrabold text-slate-500">
+                              <span>Distance Cable Run</span>
+                              <span className="font-mono text-xs text-amber-500 font-black">{leftCompare.length} {leftCompare.isImperial ? "ft" : "m"}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="5"
+                              max="500"
+                              value={leftCompare.length}
+                              onChange={(e) => setLeftCompare(p => ({ ...p, length: parseInt(e.target.value) || 5 }))}
+                              className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* MATRIC CHASSIS RESULTS READOUT - LEFT */}
+                        <div className="space-y-2 border-t border-slate-200 dark:border-slate-800 pt-4">
+                          <h5 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Live Sizing Solver Readouts</h5>
+                          
+                          <div className="grid grid-cols-2 gap-2 text-2xs">
+                            <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800 shadow-3xs">
+                              <span className="text-slate-400 block pb-0.5">Base Ampacity</span>
+                              <strong className="text-sm font-black text-slate-800 dark:text-slate-100">{leftResultComp.base} A</strong>
+                            </div>
+                            <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800 shadow-3xs">
+                              <span className="text-slate-400 block pb-0.5">125% Design Cap</span>
+                              <strong className="text-sm font-black text-slate-850 dark:text-slate-100">{leftResultComp.design} A</strong>
+                            </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800 space-y-2.5 shadow-3xs text-xs">
+                            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-1">
+                              <span className="text-[10px] text-slate-400 font-bold uppercase">Sized Conductor Gauge</span>
+                              <strong className="text-xs font-black text-lime-600 dark:text-lime-400">{leftResultComp.cable}</strong>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-400 text-[10px] uppercase font-semibold">Cable Thermal Limit</span>
+                              <span className="font-extrabold text-slate-850 dark:text-slate-200">{leftResultComp.ampacity} A</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-400 text-[10px] uppercase font-semibold">Resistivity (Copper)</span>
+                              <span className="font-mono text-slate-700 dark:text-slate-300 font-bold text-[11px]">{leftResultComp.resistance} Ω/km</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-400 text-[10px] uppercase font-semibold">Voltage Drop loss %</span>
+                              <span className={`font-black ${leftResultComp.passed ? "text-lime-605 text-lime-600 dark:text-lime-400" : "text-rose-500 animate-pulse"}`}>
+                                {leftResultComp.lossPct}% ({leftResultComp.lossVolts} V)
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-400 text-[10px] uppercase font-semibold">Jurisdiction &amp; Limit</span>
+                              <span className="font-bold text-slate-700 dark:text-slate-300">
+                                {leftResultComp.std} (Max {leftResultComp.limit}%)
+                              </span>
+                            </div>
+                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800/60 flex justify-between items-center">
+                              <span className="text-[9px] font-extrabold uppercase text-slate-400">Standard Code Verification</span>
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
+                                leftResultComp.passed ? "bg-lime-550/10 text-lime-600 dark:text-lime-400" : "bg-red-500/10 text-red-500"
+                              }`}>
+                                {leftResultComp.passed ? "✓ Passed Link" : "✗ Infraction"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* RIGHT COLUMN WORKSPACE */}
+                      <div className="bg-slate-50/50 dark:bg-slate-900/20 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-5">
+                        <div className="border-b border-slate-200 dark:border-slate-800 pb-2 flex justify-between items-center">
+                          <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                            Run B: {rightCompare.name.split(' (')[0]}
+                          </span>
+                          <span className="text-[10px] font-mono bg-slate-200/50 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-550 dark:text-slate-400 uppercase">
+                            {rightCompare.region} Code Config
+                          </span>
+                        </div>
+
+                        {/* Interactive Parameters Sliders / Fields */}
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase font-bold text-slate-500 block">System (V)</span>
+                              <input
+                                type="number"
+                                value={rightCompare.volt}
+                                onChange={(e) => setRightCompare(p => ({ ...p, volt: parseInt(e.target.value) || 480 }))}
+                                className="w-full text-xs p-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-100 font-bold"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase font-bold text-slate-500 block">Power Factor</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.1"
+                                max="1.0"
+                                value={rightCompare.pf}
+                                onChange={(e) => setRightCompare(p => ({ ...p, pf: parseFloat(e.target.value) || 0.82 }))}
+                                className="w-full text-xs p-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-100 font-bold"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase font-bold text-slate-500 block">Volt Class</span>
+                              <select
+                                value={rightCompare.phases}
+                                onChange={(e) => setRightCompare(p => ({ ...p, phases: parseInt(e.target.value) || 3 }))}
+                                className="w-full text-xs p-1.5 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-805 dark:text-slate-100 font-bold"
+                              >
+                                <option value={3}>3-Phase Balanced</option>
+                                <option value={1}>1-Phase Outlet</option>
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase font-bold text-slate-500 block">Unit Format</span>
+                              <select
+                                value={rightCompare.isImperial ? "imperial" : "metric"}
+                                onChange={(e) => setRightCompare(p => ({ ...p, isImperial: e.target.value === "imperial" }))}
+                                className="w-full text-xs p-1.5 rounded bg-white dark:bg-slate-955 border border-slate-200 dark:border-slate-800 text-slate-850 dark:text-slate-100 font-medium"
+                              >
+                                <option value="metric">Metric (mm², m)</option>
+                                <option value="imperial font-bold font-mono">US/CA (AWG, ft)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Load kW Slider & text */}
+                          <div className="space-y-1 bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800/80">
+                            <div className="flex justify-between items-center text-2xs uppercase font-extrabold text-slate-500">
+                              <span>Sizing Active Load</span>
+                              <span className="font-mono text-xs text-amber-500 font-black">{rightCompare.kw} kW</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="300"
+                              value={rightCompare.kw}
+                              onChange={(e) => setRightCompare(p => ({ ...p, kw: parseInt(e.target.value) || 1 }))}
+                              className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                            />
+                          </div>
+
+                          {/* Run Length Slider & text */}
+                          <div className="space-y-1 bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800/80">
+                            <div className="flex justify-between items-center text-2xs uppercase font-extrabold text-slate-500">
+                              <span>Distance Cable Run</span>
+                              <span className="font-mono text-xs text-amber-500 font-black">{rightCompare.length} {rightCompare.isImperial ? "ft" : "m"}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="5"
+                              max="500"
+                              value={rightCompare.length}
+                              onChange={(e) => setRightCompare(p => ({ ...p, length: parseInt(e.target.value) || 5 }))}
+                              className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* MATRIC CHASSIS RESULTS READOUT - RIGHT */}
+                        <div className="space-y-2 border-t border-slate-200 dark:border-slate-800 pt-4">
+                          <h5 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Live Sizing Solver Readouts</h5>
+                          
+                          <div className="grid grid-cols-2 gap-2 text-2xs">
+                            <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800 shadow-3xs">
+                              <span className="text-slate-400 block pb-0.5">Base Ampacity</span>
+                              <strong className="text-sm font-black text-slate-850 dark:text-slate-100">{rightResultComp.base} A</strong>
+                            </div>
+                            <div className="bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800 shadow-3xs">
+                              <span className="text-slate-400 block pb-0.5">125% Design Cap</span>
+                              <strong className="text-sm font-black text-slate-850 dark:text-slate-100">{rightResultComp.design} A</strong>
+                            </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800 space-y-2.5 shadow-3xs text-xs">
+                            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-1">
+                              <span className="text-[10px] text-slate-400 font-bold uppercase">Sized Conductor Gauge</span>
+                              <strong className="text-xs font-black text-lime-600 dark:text-lime-400">{rightResultComp.cable}</strong>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-400 text-[10px] uppercase font-semibold">Cable Thermal Limit</span>
+                              <span className="font-extrabold text-slate-850 dark:text-slate-200">{rightResultComp.ampacity} A</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-400 text-[10px] uppercase font-semibold">Resistivity (Copper)</span>
+                              <span className="font-mono text-slate-705 dark:text-slate-300 font-bold text-[11px]">{rightResultComp.resistance} Ω/km</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-400 text-[10px] uppercase font-semibold">Voltage Drop loss %</span>
+                              <span className={`font-black ${rightResultComp.passed ? "text-lime-600 dark:text-lime-450" : "text-rose-505 text-red-500 animate-pulse"}`}>
+                                {rightResultComp.lossPct}% ({rightResultComp.lossVolts} V)
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-slate-400 text-[10px] uppercase font-semibold">Jurisdiction &amp; Limit</span>
+                              <span className="font-bold text-slate-700 dark:text-slate-300">
+                                {rightResultComp.std} (Max {rightResultComp.limit}%)
+                              </span>
+                            </div>
+                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800/60 flex justify-between items-center">
+                              <span className="text-[9px] font-extrabold uppercase text-slate-400">Standard Code Verification</span>
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
+                                rightResultComp.passed ? "bg-lime-550/10 text-lime-600 dark:text-lime-400" : "bg-red-500/10 text-red-500"
+                              }`}>
+                                {rightResultComp.passed ? "✓ Passed Link" : "✗ Infraction"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* ANALYTICAL INSIGHT PANEL */}
+                    <div className="bg-amber-500/5 dark:bg-amber-550/2 border border-amber-500/15 rounded-xl p-5 space-y-3 font-sans">
+                      <h4 className="text-xs font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-amber-500 font-bold" />
+                        Dynamic Comparative Engineering Insights
+                      </h4>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-350 leading-relaxed font-semibold">
+                        Sizing analysis shows key physical variations based on independent circuit routing coefficients:
+                      </p>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1 text-2xs leading-relaxed font-medium">
+                        
+                        {/* Insight 1: Efficiency comparison */}
+                        <div className="bg-white/45 dark:bg-black/35 p-3 rounded-lg border border-slate-200 dark:border-slate-800 shadow-3xs space-y-1">
+                          <span className="text-slate-450 uppercase tracking-wide font-bold block text-[9px]">Voltage Drop Performance</span>
+                          {parseFloat(leftResultComp.lossPct) === parseFloat(rightResultComp.lossPct) ? (
+                            <span className="text-slate-700 dark:text-slate-300">Both layouts showcase identical voltage drop percentages ({leftResultComp.lossPct}%).</span>
+                          ) : parseFloat(leftResultComp.lossPct) < parseFloat(rightResultComp.lossPct) ? (
+                            <span className="text-slate-800 dark:text-slate-200">
+                              <strong className="text-lime-600 dark:text-lime-400 font-extrabold">Run A is more efficient</strong>, maintaining {leftResultComp.lossPct}% drop compared to Run B's {rightResultComp.lossPct}% (a difference of {(parseFloat(rightResultComp.lossPct) - parseFloat(leftResultComp.lossPct)).toFixed(2)}%).
+                            </span>
+                          ) : (
+                            <span className="text-slate-800 dark:text-slate-200">
+                              <strong className="text-lime-600 dark:text-lime-400 font-extrabold">Run B is more efficient</strong>, maintaining {rightResultComp.lossPct}% drop compared to Run A's {leftResultComp.lossPct}% (a difference of {(parseFloat(leftResultComp.lossPct) - parseFloat(rightResultComp.lossPct)).toFixed(2)}%).
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Insight 2: Size / Gauge comparison */}
+                        <div className="bg-white/45 dark:bg-black/35 p-3 rounded-lg border border-slate-200 dark:border-slate-800 shadow-3xs space-y-1">
+                          <span className="text-slate-450 uppercase tracking-wide font-bold block text-[9px]">Calculated Gauge Scaling</span>
+                          <span className="text-slate-750 dark:text-slate-300 block">
+                            Run A sizes to <strong className="text-amber-550 dark:text-amber-400 font-black">{leftResultComp.cable}</strong> and Run B sizes to <strong className="text-amber-550 dark:text-amber-400 font-black">{rightResultComp.cable}</strong>. 
+                          </span>
+                          <span className="text-[9px] text-slate-450 block mt-1 leading-none">
+                            *Scales conform to the respective regional metric / AWG codes.
+                          </span>
+                        </div>
+
+                        {/* Insight 3: Code and Standard differences */}
+                        <div className="bg-white/45 dark:bg-black/35 p-3 rounded-lg border border-slate-200 dark:border-slate-800 shadow-3xs space-y-1">
+                          <span className="text-slate-455 uppercase tracking-wide font-bold block text-[9px]">Rulebase Regulatory Frame</span>
+                          <span className="text-slate-700 dark:text-slate-350">
+                            Run A complies with standard <strong className="font-extrabold text-slate-800 dark:text-white">{leftResultComp.std}</strong> ({leftResultComp.ref}). Run B complies with <strong className="font-extrabold text-slate-805 dark:text-white">{rightResultComp.std}</strong> ({rightResultComp.ref}).
+                          </span>
+                        </div>
+
+                      </div>
+                    </div>
+
+                  </div>
+                </motion.div>
+              )}
+
             </div>
           )}
 
@@ -3571,7 +4329,7 @@ export default function App() {
               onNavigate={(page, subTab) => {
                 setActivePage(page);
                 if (subTab) {
-                  setCalcTab(subTab as "load" | "cable" | "vdrop" | "conduit" | "gemini-sizer");
+                  setCalcTab(subTab as "load" | "cable" | "vdrop" | "conduit" | "gemini-sizer" | "compare");
                 }
               }}
               onAskAI={(prompt) => {

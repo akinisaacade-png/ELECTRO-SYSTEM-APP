@@ -76,6 +76,24 @@ export interface CalculationResult {
   ref: string;
 }
 
+export interface PinnedCalculation {
+  id: string;
+  name: string;
+  type: "load" | "cable" | "vdrop";
+  timestamp: string;
+  region: string;
+  isImperial: boolean;
+  kw?: number;
+  pf?: number;
+  phases?: number;
+  volt: number;
+  ampacity: number;
+  cableSize: string;
+  voltageDropPct?: number;
+  voltageDropVolts?: number;
+  passed?: boolean;
+}
+
 export const REGIONS: Record<string, RegionConfig> = {
   UK: {
     std: "BS 7671",
