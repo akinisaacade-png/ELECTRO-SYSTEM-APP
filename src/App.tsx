@@ -250,15 +250,8 @@ export default function App() {
     try {
       console.log(`Initiating checkout sequence for ${plan.name}...`);
 
-      let dbInstance;
-      try {
-        dbInstance = getFirestore();
-      } catch (e) {
-        console.warn("Firestore instance not initialized yet.");
-      }
-
-      // 2. CRITICAL FIX: Verify the first argument to collection() is valid
-      if (!dbInstance || !(dbInstance as any).type || (dbInstance as any).type !== "firestore") {
+      // 2. CRITICAL FIX: Verify the imported 'db' instance is loaded and is indeed valid
+      if (!db || !(db as any).type || (db as any).type !== "firestore") {
         console.log("Redirecting to Mock Payment Gateway (Sandbox Mode)...");
         
         // Simulate real checkout latency
@@ -274,7 +267,7 @@ export default function App() {
       }
 
       // 3. Standard production Firebase Extension Checkout Flow
-      const checkoutSessionsRef = collection(dbInstance, "customers", currentUser.uid, "checkout_sessions");
+      const checkoutSessionsRef = collection(db, "customers", currentUser.uid, "checkout_sessions");
       const docRef = await addDoc(checkoutSessionsRef, {
         price: plan.id,
         success_url: window.location.origin,
