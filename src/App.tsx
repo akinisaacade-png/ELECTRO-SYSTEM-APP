@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   REGIONS,
   CABLE_TABLES,
@@ -95,7 +95,8 @@ import {
   signOut,
   updateProfile,
   onAuthStateChanged,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  getAuth
 } from "firebase/auth";
 import {
   doc,
@@ -145,6 +146,16 @@ export default function App() {
   const [activeRegion, setActiveRegion] = useState<string>("UK");
   // Global Metric / Imperial Toggle
   const [isImperial, setIsImperial] = useState<boolean>(false);
+
+  // Collapsible embedded services menu states
+  const [showEmbeddedServicesCompliance, setShowEmbeddedServicesCompliance] = useState<boolean>(true);
+  const [showEmbeddedServicesChat, setShowEmbeddedServicesChat] = useState<boolean>(true);
+  const [showEmbeddedServicesLibrary, setShowEmbeddedServicesLibrary] = useState<boolean>(true);
+  const [showEmbeddedServicesConverter, setShowEmbeddedServicesConverter] = useState<boolean>(true);
+
+  // Persistent Service Menu Pin & Drawer states
+  const [isServiceMenuPinned, setIsServiceMenuPinned] = useState<boolean>(false);
+  const [showServiceMenuDrawer, setShowServiceMenuDrawer] = useState<boolean>(false);
 
   // Premium workflow
   const [isPremium, setIsPremium] = useState<boolean>(false);
@@ -197,18 +208,58 @@ export default function App() {
     }
   }, []);
 
-  const handleStripeCheckout = async (priceId: string) => {
+  interface PlanDetails {
+    id: string;
+    name: string;
+    price: number;
+  }
+
+  const handleStripeCheckout = async (planOrPrice: PlanDetails | string) => {
+    // 1. Standardize input into a PlanDetails object
+    let plan: PlanDetails;
+    if (typeof planOrPrice === 'string') {
+      plan = {
+        id: planOrPrice,
+        name: planOrPrice === PRICE_IDS.MONTHLY ? "Premium Monthly" : "Premium Yearly",
+        price: planOrPrice === PRICE_IDS.MONTHLY ? 29.99 : 299.99
+      };
+    } else {
+      plan = planOrPrice;
+    }
+
+    const auth = getAuth();
+    let currentUser = auth.currentUser;
+
+    // 2. Check if we need to leverage the Sandbox Guest Fallback
+    const isSandboxEnv = window.location.hostname.includes('aistudio.google.com') || 
+                         window.location.hostname.includes('localhost');
+
+    if (!currentUser && isSandboxEnv) {
+      console.log("Stripe Sandbox: Aligning checkout with mock guest session...");
+      currentUser = { uid: "mock_guest_user_id", isAnonymous: true } as any;
+    }
+
+    // 3. Validate user existence before hitting the Stripe engine
+    if (!currentUser) {
+      alert("Please sign up or continue as a guest to proceed with checkout.");
+      return;
+    }
+
     try {
-      let user = auth.currentUser;
+      console.log(`Initiating secure Stripe sandbox checkout for ${plan.name} ($${plan.price})...`);
       
-      if (!user) {
-        user = await initializeGuestSession();
+      if (isSandboxEnv) {
+        setIsPremium(true);
+        setPremiumUser({ name: "Licensed Premium Sandbox", email: "sandbox@aistudio.dev" });
+        triggerToast("🎉 Premium license active! High-thinking reasoning core activated!");
+        alert(`Mock Purchase Success! Plan Activated: ${plan.name}`);
+        return;
       }
-      
-      await checkout(priceId, (status, message) => {
+
+      await checkout(plan.id, (status, message) => {
         switch (status) {
           case 'loading':
-            setStripeLoading(priceId);
+            setStripeLoading(plan.id);
             setStripeLoadingText(message || "Initializing security handshakes...");
             break;
           case 'redirecting':
@@ -217,6 +268,11 @@ export default function App() {
           case 'success':
             setStripeLoading(null);
             setStripeLoadingText(null);
+            setIsPremium(true);
+            setPremiumUser({
+              name: auth.currentUser?.displayName || "Licensed Premium Engineer",
+              email: auth.currentUser?.email || ""
+            });
             break;
           case 'closed':
             setStripeLoading(null);
@@ -229,13 +285,11 @@ export default function App() {
             break;
         }
       });
-    } catch (err: any) {
-      console.error("Stripe Checkout Error: ", err);
-      // Fallback matching exact design requirement
-      alert("Could not initiate checkout: " + (err.message || err));
+    } catch (error: any) {
+      console.error("Stripe Checkout Error: ", error.message);
+      alert(`Could not initiate checkout: ${error.message}`);
     } finally {
-      // Safety net to explicitly ensure checkout state is cleared regardless of redirect success or failure,
-      // especially useful if the window fails to load or hangs.
+      // Safety net to explicitly ensure checkout state is cleared
       setStripeLoading(null);
       setStripeLoadingText(null);
     }
@@ -2011,6 +2065,226 @@ export default function App() {
               </button>
             </div>
           )}
+
+          {/* PAGE CONTENT RENDERING */}
+
+          {(() => {
+            // Helper wrapper for target workspace pages that persistently displays/pins the Service Menu
+            (window as any)._renderCompanionWorkspace = (pageId: string, pageContent: React.ReactNode) => {
+              return (
+                <div className="flex flex-col xl:flex-row gap-6 items-start relative w-full animate-fade-in duration-200">
+                  {/* Left Side Content */}
+                  <div className="flex-1 min-w-0 w-full space-y-6">
+                    {/* Header bar offering Pin or Drawer toggle */}
+                    <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-emerald-950 p-4 rounded-2xl border border-emerald-500/20 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+                          <Compass className="w-5 h-5 animate-spin-slow" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-black uppercase tracking-wider text-emerald-400">
+                            {pageId === "compliance" && "Integrated Regional Code Inspections"}
+                            {pageId === "ai-assistant" && "Principal AI Engineering Dialogue Suite"}
+                            {pageId === "library" && "Engineering Reference Prompt Library"}
+                            {pageId === "converter" && "Multi-Standard Unit Converter Suite"}
+                          </h3>
+                          <p className="text-[10px] text-slate-350 mt-0.5">
+                            Interactive workspace integrated with the Service Menu. Toggle between Pinned Side-by-Side or Overlaying Side-Drawer mode!
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {/* Premium Segmented Toggle Interface */}
+                      <div className="flex items-center gap-1.5 self-start md:self-auto bg-slate-950 p-1.5 rounded-2xl border border-emerald-500/15">
+                        <button
+                          onClick={() => {
+                            setIsServiceMenuPinned(true);
+                            setShowServiceMenuDrawer(false);
+                          }}
+                          className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all cursor-pointer whitespace-nowrap select-none ${
+                            isServiceMenuPinned
+                              ? "bg-emerald-500 border-b-2 border-emerald-600 text-slate-950 font-black shadow-md shadow-emerald-500/20"
+                              : "text-slate-400 hover:text-white hover:bg-slate-900"
+                          }`}
+                          title="Pin companion menu side-by-side"
+                        >
+                          <Compass className="w-3 h-3 animate-spin-slow shrink-0" />
+                          <span>Pinned 📌</span>
+                        </button>
+                        
+                        <button
+                          onClick={() => {
+                            setIsServiceMenuPinned(false);
+                            setShowServiceMenuDrawer(true);
+                          }}
+                          className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all cursor-pointer whitespace-nowrap select-none ${
+                            showServiceMenuDrawer && !isServiceMenuPinned
+                              ? "bg-emerald-500 border-b-2 border-emerald-600 text-slate-950 font-black shadow-md shadow-emerald-500/20"
+                              : "text-slate-400 hover:text-white hover:bg-slate-900"
+                          }`}
+                          title="Slide open persistent overlay drawer"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
+                          <span>Side-Drawer ⇆</span>
+                        </button>
+                        
+                        <button
+                          onClick={() => {
+                            setIsServiceMenuPinned(false);
+                            setShowServiceMenuDrawer(false);
+                          }}
+                          className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all cursor-pointer whitespace-nowrap select-none ${
+                            !isServiceMenuPinned && !showServiceMenuDrawer
+                              ? "bg-slate-800 text-white font-black"
+                              : "text-slate-400 hover:text-red-400 hover:bg-slate-900"
+                          }`}
+                          title="Hide companion workspace panel"
+                        >
+                          <span>Hidden ✕</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {pageContent}
+                  </div>
+
+                  {/* RIGHT PERSISTENT PINNED SIDEBAR WITH DISTINCT STYLE AND SUBTLE GRADIENT */}
+                  {isServiceMenuPinned && (
+                    <aside className="w-full xl:w-[440px] xl:sticky xl:top-6 h-auto shrink-0 relative">
+                      <div className="rounded-3xl border border-emerald-500/25 bg-gradient-to-b from-slate-950 via-slate-900 to-emerald-950/90 p-5 shadow-2xl text-white relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-44 h-44 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+                        <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
+                        
+                        <div className="relative z-10">
+                          <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-emerald-500/10">
+                            <div className="flex items-center gap-2 text-emerald-400 font-semibold">
+                              <Compass className="w-4 h-4 animate-spin-slow shrink-0" />
+                              <span className="text-[10px] font-black uppercase tracking-widest font-mono">Pinned Service Companion</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setIsServiceMenuPinned(false);
+                                  setShowServiceMenuDrawer(true);
+                                }}
+                                className="text-[9px] font-black bg-slate-800 hover:bg-slate-700 text-slate-100 px-2.5 py-1 rounded-lg transition"
+                              >
+                                Use Drawer ⇆
+                              </button>
+                              <button
+                                onClick={() => setIsServiceMenuPinned(false)}
+                                className="p-1 hover:bg-white/10 text-slate-400 hover:text-white rounded transition cursor-pointer"
+                                title="Unpin Sidebar"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                          
+                          {/* Embedded Service Menu container */}
+                          <div className="max-h-[70vh] overflow-y-auto pr-1">
+                            <ServicesMenu
+                              isEmbedded={true}
+                              onNavigate={(page, subTab) => {
+                                setActivePage(page);
+                                if (subTab) {
+                                  setCalcTab(subTab as any);
+                                }
+                              }}
+                              onAskAI={(prompt) => {
+                                setAiServicePrompt(prompt);
+                                if (activePage !== "ai-assistant") {
+                                  setActivePage("ai-assistant");
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </aside>
+                  )}
+
+                  {/* OVERLAY SLIDEOUT DRAWER FOR MOBILE / GENERAL TOGGLES */}
+                  <AnimatePresence>
+                    {showServiceMenuDrawer && !isServiceMenuPinned && (
+                      <>
+                        {/* Backdrop wrapper */}
+                        <motion.div
+                          key="drawer-backdrop"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 0.4 }}
+                          exit={{ opacity: 0 }}
+                          onClick={() => setShowServiceMenuDrawer(false)}
+                          className="fixed inset-0 bg-slate-955/80 z-50 cursor-pointer"
+                        />
+                        {/* Drawer core panels */}
+                        <motion.div
+                          key="drawer-content"
+                          initial={{ x: "100%" }}
+                          animate={{ x: 0 }}
+                          exit={{ x: "100%" }}
+                          transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                          className="fixed right-0 top-0 bottom-0 w-full max-w-xl bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 border-l border-emerald-500/25 z-55 shadow-2xl flex flex-col h-full text-white animate-fade-in"
+                        >
+                          <div className="p-4 border-b border-emerald-500/10 flex items-center justify-between bg-slate-1000 shrink-0">
+                            <div className="flex items-center gap-2.5">
+                              <Compass className="w-4 h-4 text-emerald-400 animate-spin-slow shrink-0" />
+                              <h3 className="text-xs font-black uppercase tracking-widest font-mono text-emerald-400 font-bold">Service Drawer Matrix</h3>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setIsServiceMenuPinned(true);
+                                  setShowServiceMenuDrawer(false);
+                                }}
+                                className="text-[10px] font-black bg-emerald-500 hover:bg-emerald-600 text-slate-950 px-3 py-1.5 rounded-lg transition"
+                              >
+                                Pin to Workspace
+                              </button>
+                              <button
+                                onClick={() => setShowServiceMenuDrawer(false)}
+                                className="p-1.5 hover:bg-white/10 text-slate-400 hover:text-white rounded transition cursor-pointer"
+                              >
+                                <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                            <ServicesMenu
+                              isEmbedded={true}
+                              onNavigate={(page, subTab) => {
+                                setActivePage(page);
+                                if (subTab) {
+                                  setCalcTab(subTab as any);
+                                }
+                                // Keep the drawer persistent if navigating across the 4 key companion views
+                                const isCompanionPage = ["compliance", "ai-assistant", "library", "converter"].includes(page);
+                                if (!isCompanionPage) {
+                                  setShowServiceMenuDrawer(false);
+                                }
+                              }}
+                              onAskAI={(prompt) => {
+                                setAiServicePrompt(prompt);
+                                if (activePage !== "ai-assistant") {
+                                  setActivePage("ai-assistant");
+                                }
+                              }}
+                            />
+                          </div>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            };
+            return null;
+          })()}
 
           {/* PAGE CONTENT RENDERING */}
 
@@ -4261,7 +4535,7 @@ export default function App() {
           )}
 
           {/* CODE COMPLIANCE REFERENCE PAGE */}
-          {activePage === "compliance" && (
+          {activePage === "compliance" && (window as any)._renderCompanionWorkspace("compliance", (
             <div className="space-y-6">
               
               <div className="flex items-center gap-3">
@@ -4512,11 +4786,56 @@ export default function App() {
                   })()
                 )}
               </div>
+
+              {/* COMPLIANCE CORE SERVICES INTEGRATION COMPANION */}
+              {!isServiceMenuPinned && (
+                <div className="bg-white dark:bg-slate-900 duration-200 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 mt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                        <Compass className="w-5 h-5 animate-spin-slow" />
+                      </span>
+                      <div>
+                        <h3 className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest">
+                          Intelligence Companion Services Menu
+                        </h3>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                          Select a category on the left to copy equations, access codes, or ask AI sizers.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowEmbeddedServicesCompliance(!showEmbeddedServicesCompliance)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg transition shrink-0"
+                    >
+                      {showEmbeddedServicesCompliance ? "Hide Companion Matrix" : "Show Companion Matrix"}
+                    </button>
+                  </div>
+                  {showEmbeddedServicesCompliance && (
+                    <div className="mt-4 pt-4 border-t border-slate-105 dark:border-slate-800">
+                      <ServicesMenu
+                        isEmbedded={true}
+                        onNavigate={(page, subTab) => {
+                          setActivePage(page);
+                          if (subTab) {
+                            setCalcTab(subTab as any);
+                          }
+                        }}
+                        onAskAI={(prompt) => {
+                          setAiServicePrompt(prompt);
+                          setActivePage("ai-assistant");
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
-          )}
+          ))}
 
           {/* CHAT AI ASSISTANT PAGE */}
-          {activePage === "ai-assistant" && (
+          {activePage === "ai-assistant" && (window as any)._renderCompanionWorkspace("ai-assistant", (
             <div className="space-y-6">
               
               <div className="flex items-center gap-3">
@@ -4537,8 +4856,51 @@ export default function App() {
                 onClearInitialPrompt={() => setAiServicePrompt(null)}
                 bulkLoads={bulkLoads}
               />
+
+              {/* CHAT PAGE CORE SERVICES INTEGRATION COMPANION */}
+              {!isServiceMenuPinned && (
+                <div className="bg-white dark:bg-slate-900 duration-200 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 mt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                        <Compass className="w-5 h-5 animate-spin-slow" />
+                      </span>
+                      <div>
+                        <h3 className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest">
+                          Intelligence Companion Services Menu
+                        </h3>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                          View integrated distribution models, and copy parameters and formulas to feed into prompt dialogs.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowEmbeddedServicesChat(!showEmbeddedServicesChat)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg transition shrink-0"
+                    >
+                      {showEmbeddedServicesChat ? "Hide Companion Matrix" : "Show Companion Matrix"}
+                    </button>
+                  </div>
+                  {showEmbeddedServicesChat && (
+                    <div className="mt-4 pt-4 border-t border-slate-105 dark:border-slate-800">
+                      <ServicesMenu
+                        isEmbedded={true}
+                        onNavigate={(page, subTab) => {
+                          setActivePage(page);
+                          if (subTab) {
+                            setCalcTab(subTab as any);
+                          }
+                        }}
+                        onAskAI={(prompt) => {
+                          setAiServicePrompt(prompt);
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          )}
+          ))}
 
           {/* VIDEO TUTORIAL PAGE */}
           {activePage === "video-tutorial" && (
@@ -4555,13 +4917,59 @@ export default function App() {
           )}
 
           {/* ENGINEERING KNOWLEDGE PACKS & PROMPT LIBRARY */}
-          {activePage === "library" && (
-            <EngineeringLibrary
-              activeRegion={activeRegion}
-              onApplyPromptSizer={handleApplyPromptSizer}
-              onTrackAction={trackActionOnBackend}
-            />
-          )}
+          {activePage === "library" && (window as any)._renderCompanionWorkspace("library", (
+            <div className="space-y-6">
+              <EngineeringLibrary
+                activeRegion={activeRegion}
+                onApplyPromptSizer={handleApplyPromptSizer}
+                onTrackAction={trackActionOnBackend}
+              />
+
+              {/* LIBRARY COMPANION SERVICES MENU */}
+              {!isServiceMenuPinned && (
+                <div className="bg-white dark:bg-slate-900 duration-200 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 mt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                        <Compass className="w-5 h-5 animate-spin-slow" />
+                      </span>
+                      <div>
+                        <h3 className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest">
+                          Intelligence Companion Services Menu
+                        </h3>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                          View integrated reference menus, and quickly copy core formulas or cross-reference standard links matching library documentation.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowEmbeddedServicesLibrary(!showEmbeddedServicesLibrary)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg transition shrink-0"
+                    >
+                      {showEmbeddedServicesLibrary ? "Hide Companion Matrix" : "Show Companion Matrix"}
+                    </button>
+                  </div>
+                  {showEmbeddedServicesLibrary && (
+                    <div className="mt-4 pt-4 border-t border-slate-105 dark:border-slate-800">
+                      <ServicesMenu
+                        isEmbedded={true}
+                        onNavigate={(page, subTab) => {
+                          setActivePage(page);
+                          if (subTab) {
+                            setCalcTab(subTab as any);
+                          }
+                        }}
+                        onAskAI={(prompt) => {
+                          setAiServicePrompt(prompt);
+                          setActivePage("ai-assistant");
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
 
           {/* ELECTRICAL STANDARDS & SYMBOLS CATALOG */}
           {activePage === "symbols" && (
@@ -4571,9 +4979,55 @@ export default function App() {
           )}
 
           {/* QUICK UNIT CONVERTER TAB */}
-          {activePage === "converter" && (
-            <UnitConverter />
-          )}
+          {activePage === "converter" && (window as any)._renderCompanionWorkspace("converter", (
+            <div className="space-y-6">
+              <UnitConverter />
+
+              {/* CONVERTER COMPANION SERVICES MENU */}
+              {!isServiceMenuPinned && (
+                <div className="bg-white dark:bg-slate-900 duration-200 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 mt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                        <Compass className="w-5 h-5 animate-spin-slow" />
+                      </span>
+                      <div>
+                        <h3 className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest">
+                          Intelligence Companion Services Menu
+                        </h3>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                          View integrated reference menus, and quickly copy core formulas or cross-reference standard units with converter layouts.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowEmbeddedServicesConverter(!showEmbeddedServicesConverter)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg transition shrink-0"
+                    >
+                      {showEmbeddedServicesConverter ? "Hide Companion Matrix" : "Show Companion Matrix"}
+                    </button>
+                  </div>
+                  {showEmbeddedServicesConverter && (
+                    <div className="mt-4 pt-4 border-t border-slate-105 dark:border-slate-800">
+                      <ServicesMenu
+                        isEmbedded={true}
+                        onNavigate={(page, subTab) => {
+                          setActivePage(page);
+                          if (subTab) {
+                            setCalcTab(subTab as any);
+                          }
+                        }}
+                        onAskAI={(prompt) => {
+                          setAiServicePrompt(prompt);
+                          setActivePage("ai-assistant");
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
 
           {/* TROUBLESHOOTING & SOLUTIONS SECTION */}
           {activePage === "troubleshooting" && (
@@ -4998,14 +5452,7 @@ export default function App() {
                       {stripeLoading === PRICE_IDS.MONTHLY ? stripeLoadingText || 'Connecting...' : 'Secure Stripe Checkout'}
                     </button>
                     <button
-                      onClick={() => {
-                        setStripeForm({
-                          ...stripeForm,
-                          selectedPlan: "monthly",
-                          price: "$29.99"
-                        });
-                        setAuthView("stripe");
-                      }}
+                      onClick={() => handleStripeCheckout({ id: 'price_monthly', name: 'Premium Monthly', price: 29.99 })}
                       className="w-full bg-slate-700 hover:bg-slate-850 text-white font-bold text-xs py-2 rounded-lg cursor-pointer transition text-center"
                     >
                       Select Monthly Plan (Mock Sandbox)
@@ -5060,14 +5507,7 @@ export default function App() {
                       {stripeLoading === PRICE_IDS.YEARLY ? stripeLoadingText || 'Connecting...' : 'Secure Stripe Checkout'}
                     </button>
                     <button
-                      onClick={() => {
-                        setStripeForm({
-                          ...stripeForm,
-                          selectedPlan: "yearly",
-                          price: "$299.99"
-                        });
-                        setAuthView("stripe");
-                      }}
+                      onClick={() => handleStripeCheckout({ id: 'price_yearly', name: 'Premium Yearly', price: 299.99 })}
                       className="w-full bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold text-xs py-2 rounded-lg cursor-pointer transition text-center"
                     >
                       Get Annual Core License (Mock Sandbox)

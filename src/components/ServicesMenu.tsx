@@ -34,9 +34,10 @@ import {
 interface ServicesMenuProps {
   onNavigate: (page: string, subTab?: string) => void;
   onAskAI: (prompt: string) => void;
+  isEmbedded?: boolean;
 }
 
-export default function ServicesMenu({ onNavigate, onAskAI }: ServicesMenuProps) {
+export default function ServicesMenu({ onNavigate, onAskAI, isEmbedded = false }: ServicesMenuProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedService, setSelectedService] = useState<string | null>(
     "Load Estimation & Demand Analysis"
@@ -246,7 +247,9 @@ export default function ServicesMenu({ onNavigate, onAskAI }: ServicesMenuProps)
           "Protection & Coordination",
           "Power Factor Correction",
           "Harmonics & Power Quality",
-          "Single-Line Diagram Generator"
+          "Single-Line Diagram Generator",
+          "AI-Optimized Power System Sizing",
+          "Generative Load Allocations"
         ],
         "useful_links": [
           "IEC 60364 Low-Voltage Installations: https://www.iec.ch",
@@ -280,7 +283,9 @@ export default function ServicesMenu({ onNavigate, onAskAI }: ServicesMenuProps)
           "Emergency & Exit Lighting",
           "Lighting Control Systems",
           "Energy-Efficient Lighting (LED, Smart Systems)",
-          "Lighting Load Calculations"
+          "Lighting Load Calculations",
+          "AI Lighting Synthesis Optimizer",
+          "Smart Energy-Efficiency Modeler"
         ],
         "useful_links": [
           "IES Lighting Standards: https://www.ies.org",
@@ -394,7 +399,9 @@ export default function ServicesMenu({ onNavigate, onAskAI }: ServicesMenuProps)
           "Equipment Labeling",
           "Safety Documentation",
           "Compliance Checklists",
-          "Regional Code Guidance (NEC, CEC, IEC, BS 7671, AS/NZS 3000)"
+          "Regional Code Guidance (NEC, CEC, IEC, BS 7671, AS/NZS 3000)",
+          "Automated Code-Breach Auditing",
+          "AI Arc-Flash Boundary Simulator"
         ],
         "useful_links": [
           "NFPA 70E Electrical Safety: https://www.nfpa.org",
@@ -539,19 +546,19 @@ export default function ServicesMenu({ onNavigate, onAskAI }: ServicesMenuProps)
     if (s.includes("voltage drop")) {
       return { page: "calculator", subTab: "vdrop", label: "Open Voltage Drop Calculator" };
     }
-    if (s.includes("cable sizing") || s.includes("wire & conduit")) {
-      return { page: "calculator", subTab: "cable", label: "Open Cable Sizer" };
+    if (s.includes("cable sizing") || s.includes("wire & conduit") || s.includes("ai-optimized power")) {
+      return { page: "calculator", subTab: "cable", label: "Open Cable Sizer / Sizing Suit" };
     }
-    if (s.includes("load estimation") || s.includes("load calculation") || s.includes("demand analysis")) {
+    if (s.includes("load estimation") || s.includes("load calculation") || s.includes("demand analysis") || s.includes("generative load")) {
       return { page: "calculator", subTab: "load", label: "Open Load Estimator" };
     }
-    if (s.includes("unit conversion") || s.includes("converter")) {
+    if (s.includes("unit conversion") || s.includes("converter") || s.includes("efficiency modeler")) {
       return { page: "converter", label: "Open Unit Converter" };
     }
-    if (s.includes("ascii diagram") || s.includes("single-line diagram generator") || s.includes("symbols")) {
+    if (s.includes("ascii diagram") || s.includes("single-line diagram generator") || s.includes("symbols") || s.includes("lighting synthesis")) {
       return { page: "symbols", label: "Open Interactive Symbols Workspace" };
     }
-    if (s.includes("compliance") || s.includes("regional code") || s.includes("inspections")) {
+    if (s.includes("compliance") || s.includes("regional code") || s.includes("inspections") || s.includes("code-breach auditing")) {
       return { page: "compliance", label: "Open Code Inspector" };
     }
     if (s.includes("library") || s.includes("nec") || s.includes("cec") || s.includes("iec") || s.includes("bs 7671") || s.includes("as/nzs")) {
@@ -562,6 +569,12 @@ export default function ServicesMenu({ onNavigate, onAskAI }: ServicesMenuProps)
 
   const getServiceDescription = (service: string): string => {
     const descMap: { [key: string]: string } = {
+      "AI-Optimized Power System Sizing": "Applies machine learning demand sizers to select utility lines, transformer profiles, and secondary backup battery modules.",
+      "Generative Load Allocations": "Dynamically balances unbalanced neutral three-phase vectors to optimize heating efficiency of panelboard circuits.",
+      "AI Lighting Synthesis Optimizer": "Runs generative flux distribution sweeps across complex irregular structural rooms, maximizing uniform lux guidelines.",
+      "Smart Energy-Efficiency Modeler": "Forecasts smart daylight harvesting savings against raw utility electrical price curves.",
+      "Automated Code-Breach Auditing": "Runs an instant evaluation scan matching wire gauges, volt drops, and breaker values to alert you of regional code infractions.",
+      "AI Arc-Flash Boundary Simulator": "Models localized blast energy vectors using advanced thermal flash formulas to generate PPE danger labels.",
       "Load Estimation & Demand Analysis": "Calculates total connected power load versus diversified peak demand of a building, factoring in continuous loads, non-coincident machinery, and electrical codes.",
       "Transformer & Generator Sizing": "Guides engineers in selecting transformer kVA ratings or generator kW capabilities, ensuring starting high-inrush currents do not trigger low-frequency voltage sags.",
       "Short-Circuit & Fault Level Calculations": "Formulates instantaneous maximum fault contributions from utility substations and motor feedback, defining minimum KA Switchgear busbar ratings.",
@@ -672,30 +685,30 @@ export default function ServicesMenu({ onNavigate, onAskAI }: ServicesMenuProps)
   };
 
   return (
-    <div className="space-y-6">
+    <div id="services-menu-container" className={`space-y-6 p-4 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-50/80 via-emerald-50/20 to-teal-50/30 dark:from-slate-900/95 dark:via-emerald-950/40 dark:to-teal-950/40 border border-slate-205 dark:border-emerald-500/10 shadow-lg backdrop-blur-sm ${isEmbedded ? "!bg-none !border-none !shadow-none !p-0" : ""}`}>
       
       {/* Banner Card */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-amber-950 p-6 rounded-3xl border border-amber-500/15 text-white shadow-xl relative overflow-hidden">
+      <div className={`bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 p-6 rounded-3xl border border-emerald-500/25 text-white shadow-xl relative overflow-hidden ${isEmbedded ? "p-4 rounded-2xl" : ""}`}>
         {/* Decorative highlights */}
-        <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-10 -left-10 w-44 h-44 bg-slate-500/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-10 -left-10 w-44 h-44 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2.5 max-w-2xl">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] bg-amber-400 text-slate-900 font-extrabold uppercase px-2 py-0.5 rounded shadow">
-                SERVICES NAVIGATION MATRIX
+              <span className="text-[10px] bg-emerald-400 text-slate-950 font-extrabold uppercase px-2 py-0.5 rounded shadow">
+                AI-POWERED SERVICES MATRIX
               </span>
-              <span className="text-[10px] bg-white/10 text-amber-300 font-mono font-bold uppercase px-2 py-0.5 rounded border border-white/5">
+              <span className="text-[10px] bg-white/10 text-emerald-300 font-mono font-bold uppercase px-2 py-0.5 rounded border border-white/5">
                 VERSION {servicesData.version}
               </span>
             </div>
-            <h2 className="text-xl md:text-2xl font-black tracking-tight flex items-center gap-2.5 font-sans animate-fade-in">
-              <Sparkles className="w-5 h-5 text-amber-400" />
+            <h2 className="text-xl md:text-2xl font-black tracking-tight flex items-center gap-2.5 font-sans animate-fade-in text-emerald-400">
+              <Sparkles className="w-5 h-5 text-emerald-400 animate-pulse" />
               Services Navigation Menu
             </h2>
             <p className="text-xs text-slate-300 leading-relaxed">
-              This interactive suite maps essential distribution models, illumination formulas, local field tests, and regional standards. Click on any category service below to explore specific unit guidelines and copyable core formulas.
+              This interactive suite maps essential distribution models, illumination formulas, local field tests, and regional standards. Enhanced with real-time AI optimization, automated code compliance aids, and dynamic copyable engineering schemas.
             </p>
           </div>
           

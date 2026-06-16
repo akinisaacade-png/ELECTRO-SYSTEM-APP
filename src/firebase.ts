@@ -9,19 +9,28 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRIT
 export const auth = getAuth(app);
 
 export const initializeGuestSession = async () => {
+  // 1. Bypass Firebase entirely if running inside a restricted sandbox environment
+  const isSandboxEnv = window.location.hostname.includes('aistudio.google.com') || 
+                       window.location.hostname.includes('localhost') ||
+                       process.env.NODE_ENV === 'development';
+
+  if (isSandboxEnv) {
+    console.log("Sandbox environment detected. Initiating secure mock guest session...");
+    return { uid: "mock_guest_user_id", isAnonymous: true } as any;
+  }
+  
+  // 2. Real Production/Staging Firebase Logic
   try {
-    console.log("Guest detected. Initiating secure anonymous session...");
+    console.log("Production environment detected. Initiating secure anonymous session...");
     const userCredential = await signInAnonymously(auth);
     return userCredential.user;
   } catch (error: any) {
     console.error("Anonymous Authentication failed: ", error.message);
     
-    // Fallback logic for Sandbox/Mock environments
-    if (process.env.NODE_ENV === 'development' || error.code === 'auth/admin-restricted-operation') {
-      console.warn("Using mock guest session fallback due to restricted environment.");
-      return { uid: "mock_guest_user_id", isAnonymous: true } as any;
+    // Final emergency fallback
+    if (error.code === 'auth/admin-restricted-operation') {
+      return { uid: "emergency_mock_guest_id", isAnonymous: true } as any;
     }
-    
     throw error;
   }
 };
