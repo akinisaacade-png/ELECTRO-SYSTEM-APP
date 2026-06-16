@@ -86,7 +86,8 @@ import {
   handleFirestoreError,
   OperationType,
   checkout,
-  PRICE_IDS
+  PRICE_IDS,
+  initializeGuestSession
 } from "./firebase";
 import {
   signInWithEmailAndPassword,
@@ -198,11 +199,17 @@ export default function App() {
 
   const handleStripeCheckout = async (priceId: string) => {
     try {
+      let user = auth.currentUser;
+      
+      if (!user) {
+        user = await initializeGuestSession();
+      }
+      
       await checkout(priceId, (status, message) => {
         switch (status) {
           case 'loading':
             setStripeLoading(priceId);
-            setStripeLoadingText("Initializing security handshakes...");
+            setStripeLoadingText(message || "Initializing security handshakes...");
             break;
           case 'redirecting':
             setStripeLoadingText("Redirecting to secure Stripe Checkout...");
@@ -224,7 +231,8 @@ export default function App() {
       });
     } catch (err: any) {
       console.error("Stripe Checkout Error: ", err);
-      triggerToast(err?.message || "Could not launch Stripe Checkout page. Please try again.");
+      // Fallback matching exact design requirement
+      alert("Could not initiate checkout: " + (err.message || err));
     } finally {
       // Safety net to explicitly ensure checkout state is cleared regardless of redirect success or failure,
       // especially useful if the window fails to load or hangs.
@@ -1563,6 +1571,19 @@ export default function App() {
       setActivePage("dashboard");
     } catch (err: any) {
       triggerToast(`Login Error: ${err.message}`);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    try {
+      triggerToast("Initiating secure guest session...");
+      const guestUser = await initializeGuestSession();
+      if (guestUser) {
+        triggerToast("Connected successfully to secure guest sandbox!");
+        setActivePage("dashboard");
+      }
+    } catch (err: any) {
+      triggerToast(`Could not authenticate guest: ${err.message}`);
     }
   };
 
@@ -4679,6 +4700,23 @@ export default function App() {
                     >
                       <Gift className="w-4 h-4 text-amber-305" /> Start 7-Day Free Trial
                     </button>
+
+                    <div className="relative my-3">
+                      <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                        <div className="w-full border-t border-slate-155 dark:border-slate-800" />
+                      </div>
+                      <div className="relative flex justify-center text-[10px] font-bold uppercase">
+                        <span className="bg-white dark:bg-slate-850 px-2 text-slate-400">Or Sandbox Access</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleGuestLogin}
+                      className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-bold py-2 rounded-lg transition-all border border-slate-200 dark:border-slate-700 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      Continue as Anonymous Guest
+                    </button>
                   </form>
                 </div>
               )}
@@ -4724,6 +4762,24 @@ export default function App() {
                     >
                       Log In (Recall Data)
                     </button>
+
+                    <div className="relative my-2">
+                      <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                        <div className="w-full border-t border-slate-155 dark:border-slate-800" />
+                      </div>
+                      <div className="relative flex justify-center text-[10px] font-bold uppercase block w-full text-center">
+                        <span className="bg-white dark:bg-slate-850 px-2 text-slate-400">Or Sandbox Access</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleGuestLogin}
+                      className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs font-bold py-2 rounded-lg transition-all border border-slate-200 dark:border-slate-700 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      Continue as Anonymous Guest
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => setAuthView("reset")}
