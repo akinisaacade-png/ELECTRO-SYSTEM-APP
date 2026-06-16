@@ -48,7 +48,8 @@ import {
   ListPlus,
   Pin,
   Scale,
-  CreditCard
+  CreditCard,
+  X
 } from "lucide-react";
 import CourseAnalytics from "./components/CourseAnalytics";
 import AIAssistant from "./components/AIAssistant";
@@ -60,6 +61,7 @@ import UnitConverter from "./components/UnitConverter";
 import ServicesMenu from "./components/ServicesMenu";
 import TroubleshootingSection from "./components/TroubleshootingSection";
 import { PremiumUpgradePanel } from "./components/PremiumUpgradePanel";
+import CircuitDiagramGenerator from "./components/CircuitDiagramGenerator";
 import {
   ResponsiveContainer,
   LineChart,
@@ -68,7 +70,12 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip as ChartTooltip,
-  Legend as ChartLegend
+  Legend as ChartLegend,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar
 } from "recharts";
 import { jsPDF } from "jspdf";
 
@@ -95,6 +102,36 @@ import {
   setDoc,
   onSnapshot
 } from "firebase/firestore";
+
+const CustomRadarTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    const isItemOk = data.subject === "Ground RCD Fit" ? (data.Design === 100) : (data.Design <= data.Limit);
+    return (
+      <div className="bg-slate-950 border border-slate-800 p-3 rounded-lg shadow-xl text-[11px] space-y-1 text-slate-200">
+        <p className="font-bold text-slate-100">{data.subject}</p>
+        <p>
+          <span className="font-semibold text-slate-400">Code Limit: </span>
+          <span className="font-mono text-amber-400">{data.rawLimit}</span> (100%)
+        </p>
+        <p>
+          <span className="font-semibold text-slate-400">Current Design: </span>
+          <span className={`font-mono ${isItemOk ? "text-emerald-400" : "text-rose-400"}`}>
+            {data.rawDesign}
+          </span>{" "}
+          ({data.Design}%)
+        </p>
+        <div className="pt-1 mt-1 border-t border-slate-800 flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${isItemOk ? "bg-emerald-400" : "bg-rose-400"}`} />
+          <span className={`font-semibold ${isItemOk ? "text-emerald-400" : "text-rose-400"}`}>
+            {isItemOk ? "Compliant Safety" : data.subject === "Ground RCD Fit" ? "Critical: Ground Protection Needed" : "Non-compliant / Infraction"}
+          </span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
 
 export default function App() {
   // Page Navigation tab
@@ -160,30 +197,40 @@ export default function App() {
   }, []);
 
   const handleStripeCheckout = async (priceId: string) => {
-    await checkout(priceId, (status, message) => {
-      switch (status) {
-        case 'loading':
-          setStripeLoading(priceId);
-          setStripeLoadingText("Initializing security handshakes...");
-          break;
-        case 'redirecting':
-          setStripeLoadingText("Redirecting to secure Stripe Checkout...");
-          break;
-        case 'success':
-          setStripeLoading(null);
-          setStripeLoadingText(null);
-          break;
-        case 'closed':
-          setStripeLoading(null);
-          setStripeLoadingText(null);
-          triggerToast(message || "Stripe Checkout tab was closed before completion.");
-          break;
-        case 'error':
-          setStripeLoading(null);
-          setStripeLoadingText(null);
-          break;
-      }
-    });
+    try {
+      await checkout(priceId, (status, message) => {
+        switch (status) {
+          case 'loading':
+            setStripeLoading(priceId);
+            setStripeLoadingText("Initializing security handshakes...");
+            break;
+          case 'redirecting':
+            setStripeLoadingText("Redirecting to secure Stripe Checkout...");
+            break;
+          case 'success':
+            setStripeLoading(null);
+            setStripeLoadingText(null);
+            break;
+          case 'closed':
+            setStripeLoading(null);
+            setStripeLoadingText(null);
+            triggerToast(message || "Stripe Checkout tab was closed before completion.");
+            break;
+          case 'error':
+            setStripeLoading(null);
+            setStripeLoadingText(null);
+            break;
+        }
+      });
+    } catch (err: any) {
+      console.error("Stripe Checkout Error: ", err);
+      triggerToast(err?.message || "Could not launch Stripe Checkout page. Please try again.");
+    } finally {
+      // Safety net to explicitly ensure checkout state is cleared regardless of redirect success or failure,
+      // especially useful if the window fails to load or hangs.
+      setStripeLoading(null);
+      setStripeLoadingText(null);
+    }
   };
 
   // Stripe payments checkout mock state
@@ -2854,6 +2901,17 @@ export default function App() {
                           </p>
                         </div>
                       )}
+
+                      {bulkLoads.length > 0 && (
+                        <CircuitDiagramGenerator
+                          bulkLoads={bulkLoads}
+                          bulkLoadsCalculations={bulkLoadsCalculations}
+                          activeRegion={activeRegion}
+                          isImperial={isImperial}
+                          onTrackAction={(actionName) => trackActionOnBackend(actionName)}
+                          triggerToast={triggerToast}
+                        />
+                      )}
                     </div>
                   </div>
                 </motion.div>
@@ -4286,45 +4344,151 @@ export default function App() {
                 </div>
 
                 {ccResult && (
-                  <div className="space-y-3 pt-3">
-                    <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
-                      <span className="text-xs font-bold text-slate-500">Compliance Summary Checklist ({ccResult.standard}):</span>
-                      <span
-                        className={`text-xs font-black px-3 py-1 rounded-full ${
-                          ccResult.overall
-                            ? "bg-emerald-100 text-emerald-805 border border-emerald-400"
-                            : "bg-red-100 text-red-600 border border-red-300"
-                        }`}
-                      >
-                        {ccResult.overall ? "✓ COMPLIANT WORKFLOW APPROVED" : "✗ DESIGN REJECTED (SAFETY THREATS)"}
-                      </span>
-                    </div>
+                  (() => {
+                    const regConf = REGIONS[activeRegion];
+                    const thresholdLimit = ccCircuitType === "lighting" ? regConf.vd_light : regConf.vd_other;
+                    
+                    const radarData = [
+                      {
+                        subject: "Voltage Drop",
+                        Limit: 100,
+                        Design: Math.min(150, Math.round((ccVd / (thresholdLimit || 1)) * 100)),
+                        rawLimit: `${thresholdLimit}%`,
+                        rawDesign: `${ccVd}%`,
+                      },
+                      {
+                        subject: "Cable Heat (Load)",
+                        Limit: 100,
+                        Design: Math.min(150, Math.round((ccDesignCurrent / (ccAmpacity || 1)) * 100)),
+                        rawLimit: `${ccAmpacity}A`,
+                        rawDesign: `${ccDesignCurrent}A`,
+                      },
+                      {
+                        subject: "Fault Trip Speed",
+                        Limit: 100,
+                        Design: Math.min(150, Math.round((ccDiscontTime / 0.40) * 100)),
+                        rawLimit: "0.40s",
+                        rawDesign: `${ccDiscontTime}s`,
+                      },
+                      {
+                        subject: "Ground RCD Fit",
+                        Limit: 100,
+                        Design: ccRcd === "yes" ? 100 : 0,
+                        rawLimit: "Required",
+                        rawDesign: ccRcd === "yes" ? "Yes" : "None",
+                      }
+                    ];
 
-                    <div className="space-y-2">
-                      {ccResult.evals.map((e: any, index: number) => (
-                        <div
-                          key={index}
-                          className={`flex items-start gap-4 p-3 rounded-lg border text-xs leading-normal ${
-                            e.ok
-                              ? "bg-white border-slate-100 text-slate-700 dark:bg-slate-900/30 dark:border-slate-800"
-                              : "bg-red-50 border-red-200 text-red-900 dark:bg-red-950/20 dark:border-red-900/30 dark:text-red-350"
-                          }`}
-                        >
-                          <span
-                            className={`px-2 py-0.5 rounded text-4xs font-black shrink-0 ${
-                              e.ok ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-650"
-                            }`}
-                          >
-                            {e.ok ? "PASS" : "WARN"}
-                          </span>
-                          <div className="flex-1">
-                            <span className="font-bold block text-slate-800 dark:text-slate-155">{e.check}</span>
-                            <span className="text-3xs text-slate-450 mt-0.5 block">{e.details}</span>
+                    const overallPassed = ccResult.overall;
+                    const radarFillColor = overallPassed ? "rgba(16, 185, 129, 0.12)" : "rgba(239, 68, 68, 0.12)";
+                    const radarStrokeColor = overallPassed ? "#10b981" : "#ef4444";
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-5 border-t border-slate-100 dark:border-slate-800">
+                        {/* Summary List */}
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-900/60 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                            <span className="text-xs font-bold text-slate-500">Compliance Checklist ({ccResult.standard}):</span>
+                            <span
+                              className={`text-xs font-black px-3 py-1 rounded-full ${
+                                ccResult.overall
+                                  ? "bg-emerald-100 text-emerald-805 border border-emerald-450 dark:bg-emerald-950/20 dark:text-emerald-350 dark:border-emerald-850"
+                                  : "bg-red-105 text-red-650 border border-red-305 dark:bg-red-950/20 dark:text-red-350 dark:border-red-850"
+                              }`}
+                            >
+                              {ccResult.overall ? "✓ COMPLIANT" : "✗ REJECTED"}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2">
+                            {ccResult.evals.map((e: any, index: number) => (
+                              <div
+                                key={index}
+                                className={`flex items-start gap-4 p-3 rounded-lg border text-xs leading-normal ${
+                                  e.ok
+                                    ? "bg-white border-slate-100 text-slate-705 dark:bg-slate-900/30 dark:border-slate-800/80"
+                                    : "bg-red-50 border-red-200 text-red-900 dark:bg-red-950/20 dark:border-red-900/30 dark:text-red-350"
+                                }`}
+                              >
+                                <span
+                                  className={`px-2 py-0.5 rounded text-4xs font-black shrink-0 ${
+                                    e.ok ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-red-100 text-red-650 dark:bg-red-950/40 dark:text-red-300"
+                                  }`}
+                                >
+                                  {e.ok ? "PASS" : "WARN"}
+                                </span>
+                                <div className="flex-1">
+                                  <span className="font-bold block text-slate-800 dark:text-slate-155">{e.check}</span>
+                                  <span className="text-3xs text-slate-450 mt-0.5 block">{e.details}</span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
+
+                        {/* Radar Chart */}
+                        <div className="bg-slate-50/50 dark:bg-slate-900/30 p-4 rounded-xl border border-slate-200 dark:border-slate-800/80 flex flex-col justify-between">
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-705 dark:text-slate-350 flex items-center gap-1.5 label-radar-chart">
+                              <span className={`w-2 h-2 rounded-full ${overallPassed ? "bg-emerald-500 animate-pulse" : "bg-red-500"} shrink-0`} />
+                              Code Deviation Radar Profile (vs 100% Limit Boundary)
+                            </h4>
+                            <p className="text-[10px] text-slate-400 mt-1 leading-normal">
+                              The dark dashed ring represents standard compliance limit boundaries (100%). Sizing coordinates expanding beyond the 100% boundary limit signify code infractions.
+                            </p>
+                          </div>
+
+                          <div className="py-2 flex items-center justify-center w-full min-h-[250px]" id="compliance-radar-container">
+                            <ResponsiveContainer width="100%" height={250}>
+                              <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
+                                <PolarGrid stroke="#475569" strokeDasharray="3 3" opacity={0.3} />
+                                <PolarAngleAxis 
+                                  dataKey="subject" 
+                                  tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 500 }} 
+                                />
+                                <PolarRadiusAxis 
+                                  angle={45} 
+                                  domain={[0, 150]} 
+                                  tick={{ fill: '#64748b', fontSize: 8 }} 
+                                  axisLine={false}
+                                  tickLine={false}
+                                />
+                                <Radar 
+                                  name="Design Profile" 
+                                  dataKey="Design" 
+                                  stroke={radarStrokeColor} 
+                                  fill={radarFillColor} 
+                                  fillOpacity={0.3} 
+                                  strokeWidth={2}
+                                />
+                                <Radar 
+                                  name="Safety Boundary" 
+                                  dataKey="Limit" 
+                                  stroke="#e2e8f0" 
+                                  strokeOpacity={0.15}
+                                  strokeWidth={1.5}
+                                  strokeDasharray="4 4"
+                                  fill="none" 
+                                />
+                                <ChartTooltip content={<CustomRadarTooltip />} />
+                              </RadarChart>
+                            </ResponsiveContainer>
+                          </div>
+
+                          <div className="flex gap-4 text-[9px] font-mono text-slate-400 justify-center border-t border-slate-200/50 dark:border-slate-800/40 pt-2 shrink-0">
+                            <div className="flex items-center gap-1">
+                              <span className="w-2.5 h-2.5 rounded-xs bg-transparent border border-slate-450 shrink-0" style={{ borderStyle: 'dashed' }} />
+                              <span>Standard Boundary (100%)</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="w-2.5 h-2.5 rounded-xs shrink-0" style={{ backgroundColor: radarStrokeColor }} />
+                              <span>Current Design {overallPassed ? "(Fully Compliant)" : "(Breach Detected)"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
               </div>
             </div>
@@ -4350,6 +4514,7 @@ export default function App() {
                 onTrackAction={trackActionOnBackend} 
                 initialPrompt={aiServicePrompt}
                 onClearInitialPrompt={() => setAiServicePrompt(null)}
+                bulkLoads={bulkLoads}
               />
             </div>
           )}
@@ -4875,6 +5040,51 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Stripe Checkout Loading Overlay with Manual Close Option */}
+      {stripeLoading && (
+        <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl relative">
+            <button 
+              onClick={() => {
+                setStripeLoading(null);
+                setStripeLoadingText(null);
+                triggerToast("Secure checkout has been cancelled manually.");
+              }}
+              className="absolute top-3 right-3 text-slate-400 hover:text-white transition-colors cursor-pointer p-1 rounded-full hover:bg-slate-800"
+              title="Cancel Checkout"
+              id="stripe-loading-close-btn"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex justify-center pt-2">
+              <div className="w-12 h-12 rounded-full border-4 border-slate-800 border-t-amber-500 animate-spin" />
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="font-bold text-slate-200">Stripe Secure Gateway</h4>
+              <p className="text-xs text-slate-400 leading-relaxed px-2">
+                {stripeLoadingText || "Connecting to secure payment processors..."}
+              </p>
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={() => {
+                  setStripeLoading(null);
+                  setStripeLoadingText(null);
+                  triggerToast("Secure checkout has been cancelled manually.");
+                }}
+                className="w-full bg-slate-800 hover:bg-slate-750 text-white font-medium text-xs py-2 rounded-lg cursor-pointer transition border border-slate-700 hover:border-slate-600 focus:outline-none"
+                id="stripe-loading-cancel-footer-btn"
+              >
+                Cancel & Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

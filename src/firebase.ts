@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, signInAnonymously } from "firebase/auth";
 import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
 import { getStripePayments, createCheckoutSession } from '@stripe/firestore-stripe-payments';
 import firebaseConfig from "../firebase-applet-config.json";
@@ -46,15 +46,21 @@ export const checkout = async (
   let handleMessage: ((event: MessageEvent) => void) | null = null;
 
   try {
-    // 1. Guard against unauthenticated users
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      alert("Please Sign In or Create an Account before upgrading your license.");
-      onProgress?.('error', "User not signed in");
-      return;
-    }
-
     onProgress?.('loading');
+
+    // 1. If no user is logged in, silently sign them in anonymously so checkout doesn't crash
+    let currentUser = auth.currentUser;
+    if (!currentUser) {
+      try {
+        onProgress?.('loading', "Guest detected. Initiating secure anonymous session...");
+        console.log("Guest detected. Initiating secure anonymous session...");
+        await signInAnonymously(auth);
+        currentUser = auth.currentUser;
+      } catch (authErr: any) {
+        console.error("Anonymous Authentication failed: ", authErr);
+        throw new Error(`Anonymous Auth failed: ${authErr?.message || authErr}`);
+      }
+    }
 
     // To prevent popup blockers (by keeping it in the synchronous user click handler context),
     // we open a blank window immediately and style it with a loading state.

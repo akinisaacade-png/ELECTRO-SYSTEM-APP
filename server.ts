@@ -319,18 +319,236 @@ app.post("/api/electro-calculate", async (req, res) => {
   }
 });
 
+// ─── HIGH LEVEL SINGLE-LINE DIAGRAM RENDERER (SVG) ───
+function generateCircuitDiagram(bulk_load_data: any): string {
+  const sources = Array.isArray(bulk_load_data?.sources) ? bulk_load_data.sources : [
+    { id: "src_main", name: "Main Switchboard", voltage: "400 V", type: "utility" }
+  ];
+  const branches = Array.isArray(bulk_load_data?.branches) ? bulk_load_data.branches : [
+    { id: "br_panel_1", name: "Panel DB-1", parent_id: "src_main", breaker_rating: "125 A" }
+  ];
+  const loads = Array.isArray(bulk_load_data?.loads) ? bulk_load_data.loads : [];
+
+  const width = 900;
+  const height = 550;
+
+  // Coordinate dictionaries
+  const sourceCoords: Record<string, { x: number; y: number }> = {};
+  const branchCoords: Record<string, { x: number; y: number }> = {};
+  const loadCoords: Record<string, { x: number; y: number }> = {};
+
+  // 1. Calculate source coordinates spaced evenly
+  const S = sources.length;
+  sources.forEach((src: any, idx: number) => {
+    const x = S === 1 ? width / 2 : (idx + 1) * (width / (S + 1));
+    const y = 80;
+    sourceCoords[src.id || `src_${idx}`] = { x, y };
+  });
+
+  // 2. Calculate branch coordinates spaced horizontally under parent source
+  sources.forEach((src: any) => {
+    const parentId = src.id || "src_main";
+    const srcPt = sourceCoords[parentId] || { x: width / 2, y: 80 };
+    const children = branches.filter((br: any) => br.parent_id === parentId);
+    const B = children.length;
+    children.forEach((br: any, idx: number) => {
+      // Offset each branch horizontally centered around parent
+      const x = B === 1 ? srcPt.x : srcPt.x + (idx - (B - 1) / 2) * 200;
+      const y = 220;
+      branchCoords[br.id || `br_${idx}`] = { x, y };
+    });
+  });
+
+  // Ensure orphan branches have default positions
+  branches.forEach((br: any, idx: number) => {
+    const midId = br.id || `br_${idx}`;
+    if (!branchCoords[midId]) {
+      branchCoords[midId] = { x: (idx + 1) * (width / (branches.length + 1)), y: 220 };
+    }
+  });
+
+  // 3. Calculate loads coordinates spaced horizontally under parent branch
+  branches.forEach((br: any) => {
+    const parentId = br.id || "br_panel_1";
+    const brPt = branchCoords[parentId] || { x: width / 2, y: 220 };
+    const children = loads.filter((ld: any) => ld.parent_id === parentId);
+    const L = children.length;
+    children.forEach((ld: any, idx: number) => {
+      const x = L === 1 ? brPt.x : brPt.x + (idx - (L - 1) / 2) * 110;
+      const y = 380;
+      loadCoords[ld.id || `ld_${idx}`] = { x, y };
+    });
+  });
+
+  // Ensure orphan loads have positions
+  loads.forEach((ld: any, idx: number) => {
+    const ldId = ld.id || `ld_${idx}`;
+    if (!loadCoords[ldId]) {
+      loadCoords[ldId] = { x: (idx + 1) * (width / (loads.length + 1)), y: 380 };
+    }
+  });
+
+  let linesMarkup = "";
+  let nodesMarkup = "";
+
+  // Draw orthogonal connections: sources -> branches
+  branches.forEach((br: any, idx: number) => {
+    const brId = br.id || `br_${idx}`;
+    const pPt = sourceCoords[br.parent_id || "src_main"];
+    const pt = branchCoords[brId];
+    if (pPt && pt) {
+      const midY = (pPt.y + pt.y) / 2;
+      linesMarkup += `    <path d="M ${pPt.x} ${pPt.y + 22} L ${pPt.x} ${midY} L ${pt.x} ${midY} L ${pt.x} ${pt.y - 16}" fill="none" stroke="#64748b" stroke-width="1.8" />\n`;
+    }
+  });
+
+  // Draw orthogonal connections: branches -> loads
+  loads.forEach((ld: any, idx: number) => {
+    const ldId = ld.id || `ld_${idx}`;
+    const pPt = branchCoords[ld.parent_id || "br_panel_1"];
+    const pt = loadCoords[ldId];
+    if (pPt && pt) {
+      const midY = (pPt.y + pt.y) / 2;
+      linesMarkup += `    <path d="M ${pPt.x} ${pPt.y + 16} L ${pPt.x} ${midY} L ${pt.x} ${midY} L ${pt.x} ${pt.y - 35}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="2,2" />\n`;
+    }
+  });
+
+  // Render utility / generator / solar sources
+  sources.forEach((src: any, idx: number) => {
+    const sId = src.id || `src_${idx}`;
+    const pt = sourceCoords[sId];
+    if (!pt) return;
+
+    let iconPath = "";
+    if (src.type === "generator") {
+      iconPath = `<path d="M-10 -8 H10 V8 H-10 Z M-5 -3 L5 3 M-5 3 L5 -3" fill="none" stroke="#2563eb" stroke-width="2" />`;
+    } else if (src.type === "solar") {
+      iconPath = `
+        <circle cx="0" cy="0" r="10" fill="none" stroke="#ea580c" stroke-width="1.5" />
+        <line x1="-13" y1="0" x2="13" y2="0" stroke="#ea580c" stroke-width="1.5" />
+        <line x1="0" y1="-13" x2="0" y2="13" stroke="#ea580c" stroke-width="1.5" />
+      `;
+    } else {
+      // Default: utility substation transformer
+      iconPath = `<path d="M-12 10 L0 -8 L12 10 M-15 1 H15 M-9 -4 H9" fill="none" stroke="#475569" stroke-width="2" />`;
+    }
+
+    nodesMarkup += `
+    <g transform="translate(${pt.x}, ${pt.y})">
+      <rect x="-32" y="-24" width="64" height="48" rx="6" fill="#ffffff" stroke="#64748b" stroke-width="1.8" />
+      ${iconPath}
+      <text x="38" y="0" font-family="system-ui, sans-serif" font-size="10" font-weight="900" fill="#0f172a">${src.name || "Main Source"}</text>
+      <text x="38" y="11" font-family="monospace" font-size="7.5" font-weight="700" fill="#b45309">${src.voltage || "400 V"} • ${String(src.type || "utility").toUpperCase()}</text>
+    </g>\n`;
+  });
+
+  // Render branches (Panels / DBs with breaker)
+  branches.forEach((br: any, idx: number) => {
+    const bId = br.id || `br_${idx}`;
+    const pt = branchCoords[bId];
+    if (!pt) return;
+
+    nodesMarkup += `
+    <g transform="translate(${pt.x}, ${pt.y})">
+      <rect x="-48" y="-16" width="96" height="32" rx="6" fill="#ffffff" stroke="#ea580c" stroke-width="1.8" />
+      <g transform="translate(-42, -10)">
+        <rect width="18" height="20" rx="3" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+        <text x="9" y="13" text-anchor="middle" font-family="system-ui, sans-serif" font-size="8" font-weight="900" fill="#334155">DB</text>
+      </g>
+      <text x="-18" y="-1" font-family="system-ui, sans-serif" font-size="8" font-weight="800" fill="#0f172a">${br.name || "Panel DB"}</text>
+      <text x="-18" y="9" font-family="monospace" font-size="7" font-weight="900" fill="#059669">MCB: ${br.breaker_rating || "100 A"}</text>
+    </g>\n`;
+  });
+
+  // Render individual load elements
+  loads.forEach((ld: any, idx: number) => {
+    const lId = ld.id || `ld_${idx}`;
+    const pt = loadCoords[lId];
+    if (!pt) return;
+
+    let loadSymbol = "";
+    if (ld.type === "motor") {
+      loadSymbol = `
+        <circle cx="0" cy="0" r="22" fill="#ffffff" stroke="#475569" stroke-width="1.5" />
+        <circle cx="0" cy="0" r="14" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5" />
+        <text x="0" y="4" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="900" fill="#2563eb">M</text>
+      `;
+    } else if (ld.type === "lighting") {
+      loadSymbol = `
+        <circle cx="0" cy="0" r="22" fill="#ffffff" stroke="#475569" stroke-width="1.5" />
+        <circle cx="0" cy="-3" r="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.2" />
+        <path d="M-4 5 L-2 10 H2 L4 5" stroke="#d97706" stroke-width="1.2" fill="none" />
+        <line x1="-3" y1="12" x2="3" y2="12" stroke="#b45309" stroke-width="1.5" />
+      `;
+    } else {
+      // Generic Box with explicit power tag
+      loadSymbol = `
+        <rect x="-22" y="-22" width="44" height="44" rx="4" fill="#ffffff" stroke="#475569" stroke-width="1.5" />
+        <rect x="-14" y="-14" width="28" height="28" rx="2" fill="#faf5ff" stroke="#7c3aed" stroke-width="1.2" />
+        <text x="0" y="3.5" text-anchor="middle" font-family="monospace" font-size="7" font-weight="900" fill="#7c3aed">${ld.power_kw || 5.0}kW</text>
+      `;
+    }
+
+    nodesMarkup += `
+    <g transform="translate(${pt.x}, ${pt.y})">
+      <!-- Breaker Switch symbol -->
+      <g transform="translate(0, -35)">
+        <line x1="0" y1="-10" x2="0" y2="10" stroke="#64748b" stroke-width="1.2" />
+        <circle cx="0" cy="5" r="1.5" fill="#475569" />
+        <line x1="0" y1="5" x2="6" y2="-5" stroke="#0f172a" stroke-width="1.8" />
+      </g>
+      
+      <!-- Symbol shape -->
+      ${loadSymbol}
+      
+      <!-- Node Label tags -->
+      <text x="0" y="32" text-anchor="middle" font-family="system-ui, sans-serif" font-size="7.5" font-weight="800" fill="#334155">${ld.name || "Load"}</text>
+      ${ld.type !== "generic" ? `<text x="0" y="43" text-anchor="middle" font-family="monospace" font-size="6.5" font-weight="700" fill="#64748b">${ld.power_kw || 5.0} kW | PF ${ld.pf || 0.9}</text>` : ""}
+    </g>\n`;
+  });
+
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" height="100%" style="background-color: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+  <!-- GRID BACKGROUND GRIDLINES -->
+  <g opacity="0.15">
+    <path d="M 0 50 H ${width} M 0 100 H ${width} M 0 150 H ${width} M 0 200 H ${width} M 0 250 H ${width} M 0 300 H ${width} M 0 350 H ${width} M 0 400 H ${width} M 0 450 H ${width} M 0 500 H ${width}" stroke="#94a3b8" stroke-width="0.8" />
+    <path d="M 100 0 V ${height} M 200 0 V ${height} M 300 0 V ${height} M 400 0 V ${height} M 500 0 V ${height} M 600 0 V ${height} M 700 0 V ${height} M 800 0 V ${height}" stroke="#94a3b8" stroke-width="0.8" />
+  </g>
+
+  <!-- MOUNTED CONNECTIVITY PATHWAYS -->
+  <g>
+${linesMarkup}  </g>
+
+  <!-- PHYSICAL ELECTRICAL COMPONENT NODES -->
+  <g>
+${nodesMarkup}  </g>
+</svg>
+  `.trim();
+}
+
 // Chat assistant route (Supports Low-Latency and High Thinking toggles)
 app.post("/api/chat", async (req, res) => {
   try {
-    const { message, previousMessages = [], isHighThinking = false } = req.body;
+    const { message, previousMessages = [], isHighThinking = false, bulk_load_data } = req.body;
     if (!message) {
       return res.status(400).json({ error: "Message is required." });
     }
 
+    const lowerMessage = message.toLowerCase();
+    const isDiagramRequest = lowerMessage.includes("diagram") || lowerMessage.includes("visualize") || lowerMessage.includes("hierarchy") || lowerMessage.includes("sld");
+
     if (!process.env.GEMINI_API_KEY) {
       // Graceful offline fallback
+      let fallbackText = `[Offline Mode] You asked: "${message}". I can help perform load calculations and sizing. Please configure your GEMINI_API_KEY in the Secrets panel to activate full real-time conversations!`;
+      let svgMarkup = "";
+      
+      if (isDiagramRequest && bulk_load_data) {
+        svgMarkup = generateCircuitDiagram(bulk_load_data);
+        fallbackText += `\n\n### Compiled Single-Line Diagram (SVG fallback)\n\nI have compiled your loading configuration into a custom vertical-hierarchy diagram:\n\n\`\`\`xml\n${svgMarkup}\n\`\`\``;
+      }
+
       return res.json({
-        text: `[Offline Mode] You asked: "${message}". I can help perform load calculations and sizing. Please configure your GEMINI_API_KEY in the Secrets panel to activate full real-time conversations!`,
+        text: fallbackText,
         thinking: "System running in offline backup mode. Configure GEMINI_API_KEY for dynamic context-aware responses."
       });
     }
@@ -340,6 +558,7 @@ app.post("/api/chat", async (req, res) => {
     const systemInstruction = 
       "You are a professional principal electrical engineer and code inspector. " +
       "You guide users through electrical layout design, calculations (kW, current, ampacity), cable selection, and compliance (AU: AS/NZS 3000, CA: CEC, DE: DIN VDE, NG: IEC 60364, UK: BS 7671, US: NEC). " +
+      "When the user requests to see a circuit diagram, visualize the load hierarchy, or show single-line layout, invoke the 'circuit_diagram_generator' tool to render the layout with precise vertical/horizontal coordinates." +
       "Answer questions with technical precision and mention the relevant code tables or clauses where applicable. " +
       "Provide short, low-latency, readable formulas and code references.";
 
@@ -361,6 +580,26 @@ app.post("/api/chat", async (req, res) => {
 
     const thinkingLevel = isHighThinking ? "HIGH" : "LOW";
 
+    // Define standard Gemini tool specification
+    const tools = [{
+      functionDeclarations: [
+        {
+          name: "circuit_diagram_generator",
+          description: "Generates an SVG single-line diagram from Bulk Load Aggregator tree JSON, showing structured sources, branches, and physical loads.",
+          parameters: {
+            type: Type.OBJECT,
+            properties: {
+              bulk_load_data: {
+                type: Type.OBJECT,
+                description: "JSON dataset with sources, branches, and loads collections to model on the hierarchy layout."
+              }
+            },
+            required: ["bulk_load_data"]
+          }
+        }
+      ]
+    }];
+
     let response;
     try {
       response = await ai.models.generateContent({
@@ -369,16 +608,15 @@ app.post("/api/chat", async (req, res) => {
         config: {
           systemInstruction: systemInstruction,
           temperature: 0.7,
+          tools: tools,
           thinkingConfig: {
-            // TypeScript SDK expects ThinkingConfig which includes thinkingLevel
-            // e.g. control amount of reasoning
             thinkingLevel: thinkingLevel as any,
           }
         },
       });
     } catch (sdkError: any) {
-      console.error("Gemini API call failed, trying basic call:", sdkError);
-      // Fallback for models or key limits if thinking parameter isn't supported or fails
+      console.error("Gemini API call with tools failed, playing back basic fallback:", sdkError);
+      // Fallback for models or key limits if thinking parameter or tools isn't supported or fails
       response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
         contents: messageHistory,
@@ -389,10 +627,32 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
+    let finalText = response.text || "I processed your request.";
+    let toolCalled = false;
+    let svgMarkup = "";
+
+    // Check if tool was requested by the Gemini LLM
+    if (response.functionCalls && response.functionCalls.length > 0) {
+      const call = response.functionCalls[0];
+      if (call.name === "circuit_diagram_generator") {
+        toolCalled = true;
+        const targetData = call.args?.bulk_load_data || bulk_load_data;
+        svgMarkup = generateCircuitDiagram(targetData);
+      }
+    }
+
+    // Proactive trigger fallback if the intent matches but tool wasn't formally called by SDK
+    if (!toolCalled && isDiagramRequest && bulk_load_data) {
+      toolCalled = true;
+      svgMarkup = generateCircuitDiagram(bulk_load_data);
+    }
+
+    if (toolCalled && svgMarkup) {
+      finalText += `\n\n### Generated Single‑Line Diagram (SVG Vector Graphics)\n\nI have generated the standard single-line circuit diagram based on the load aggregator dataset:\n\n\`\`\`xml\n${svgMarkup}\n\`\`\``;
+    }
+
     res.json({
-      text: response.text || "I was unable to generate a text completion.",
-      // Some models output reasoning in candidates?.[0]?.content?.parts?.[1]?.text etc.
-      // We can pass a flag
+      text: finalText,
     });
 
   } catch (error: any) {

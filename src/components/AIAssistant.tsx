@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect } from "react";
-import { ChatMessage } from "../types";
+import { ChatMessage, BulkLoadEntry } from "../types";
 import { Bot, Send, User, Sparkles, Brain, Zap, Loader2, ArrowRight } from "lucide-react";
 import { auth } from "../firebase";
 
@@ -12,9 +12,10 @@ interface Props {
   onTrackAction: (actionType: string) => void;
   initialPrompt?: string | null;
   onClearInitialPrompt?: () => void;
+  bulkLoads?: BulkLoadEntry[];
 }
 
-export default function AIAssistant({ onTrackAction, initialPrompt, onClearInitialPrompt }: Props) {
+export default function AIAssistant({ onTrackAction, initialPrompt, onClearInitialPrompt, bulkLoads = [] }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -76,6 +77,42 @@ export default function AIAssistant({ onTrackAction, initialPrompt, onClearIniti
           message: text,
           previousMessages: messages,
           isHighThinking: isHighThinking,
+          bulk_load_data: {
+            sources: [
+              {
+                id: "src_main",
+                name: "Main Switchboard",
+                voltage: "400 V",
+                type: "utility"
+              }
+            ],
+            branches: [
+              {
+                id: "br_panel_1",
+                name: "Panel DB-1",
+                parent_id: "src_main",
+                breaker_rating: "125 A"
+              }
+            ],
+            loads: bulkLoads.map((ld, index) => {
+              const nameLower = (ld.name || "").toLowerCase();
+              let inferredType = "generic";
+              if (nameLower.includes("motor") || nameLower.includes("pump") || nameLower.includes("hvac") || nameLower.includes("ac")) {
+                inferredType = "motor";
+              } else if (nameLower.includes("lighting") || nameLower.includes("lamp") || nameLower.includes("bulb")) {
+                inferredType = "lighting";
+              }
+              return {
+                id: ld.id || `ld_${index}`,
+                name: ld.name || `Load ${index + 1}`,
+                parent_id: "br_panel_1",
+                type: inferredType,
+                power_kw: ld.kw,
+                pf: ld.pf,
+                phases: ld.phases
+              };
+            })
+          }
         }),
       });
 
