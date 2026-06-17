@@ -31,12 +31,82 @@
         }
       },
       "required": ["userId", "userName", "courses", "overallScore", "calculationsRun", "checksRun"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Core user profile document storing general information and license status.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Unique identifier of the user matching request.auth.uid"
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the authenticated user."
+        },
+        "isPremium": {
+          "type": "boolean",
+          "description": "Flag indicating if the user has an active premium subscription license."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating when the profile was last modified."
+        }
+      },
+      "required": ["userId", "email", "isPremium", "updatedAt"]
+    },
+    "StripeLog": {
+      "title": "Stripe Log",
+      "description": "Audit log recording Stripe billing events, invoices, or subscriptions.",
+      "type": "object",
+      "properties": {
+        "logId": {
+          "type": "string",
+          "description": "Unique identifiers of the custom stripe log."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The owner user ID matching the auth state."
+        },
+        "event": {
+          "type": "string",
+          "description": "The type of webhook event or user checkout transaction recorded."
+        },
+        "status": {
+          "type": "string",
+          "description": "Processing status of the checkout event e.g., succeeded, active, deleted"
+        },
+        "amount": {
+          "type": "string",
+          "description": "Amount billed or subscription cost tier e.g., $299.99"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Date and time when the event occurred."
+        },
+        "description": {
+          "type": "string",
+          "description": "A user-facing readable explanation of the transaction event."
+        }
+      },
+      "required": ["logId", "userId", "event", "status", "amount", "timestamp", "description"]
     }
   },
   "firestore": {
     "/userAnalytics/{userId}": {
       "schema": "#/entities/UserAnalytics",
       "description": "User stats and curriculum tracking records document mapped to user ID."
+    },
+    "/users/{userId}": {
+      "schema": "#/entities/User",
+      "description": "The user profile document containing active subscription state."
+    },
+    "/users/{userId}/stripe_logs/{logId}": {
+      "schema": "#/entities/StripeLog",
+      "description": "User subscription event log storing the logs for display."
     }
   }
 }

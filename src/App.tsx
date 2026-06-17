@@ -60,7 +60,7 @@ import ElectricalSymbols from "./components/ElectricalSymbols";
 import UnitConverter from "./components/UnitConverter";
 import ServicesMenu from "./components/ServicesMenu";
 import TroubleshootingSection from "./components/TroubleshootingSection";
-import { PremiumUpgradePanel } from "./components/PremiumUpgradePanel";
+import SubscriptionCheckout from "./components/SubscriptionCheckout";
 import CircuitDiagramGenerator from "./components/CircuitDiagramGenerator";
 import {
   ResponsiveContainer,
@@ -591,9 +591,30 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        setIsPremium(true);
         setPremiumUser({ name: user.displayName || "Licensed Engineer", email: user.email || "" });
         
+        // Listen to User Core Document in real-time for isPremium status
+        const userDocRef = doc(db, "users", user.uid);
+        const unsubUser = onSnapshot(userDocRef, (userSnap) => {
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            setIsPremium(userData.isPremium === true);
+          } else {
+            setIsPremium(false);
+            const defaultProfile = {
+              userId: user.uid,
+              email: user.email || "guest@electro.app",
+              isPremium: false,
+              updatedAt: new Date().toISOString()
+            };
+            setDoc(userDocRef, defaultProfile).catch((err) => {
+              handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}`);
+            });
+          }
+        }, (error) => {
+          console.error("Firestore user profile document listener failure:", error);
+        });
+
         // Listen to User Analytics document in real-time
         const docRef = doc(db, "userAnalytics", user.uid);
         const unsubAnalytics = onSnapshot(docRef, (docSnap) => {
@@ -623,7 +644,10 @@ export default function App() {
           handleFirestoreError(error, OperationType.GET, `userAnalytics/${user.uid}`);
         });
 
-        return () => unsubAnalytics();
+        return () => {
+          unsubUser();
+          unsubAnalytics();
+        };
       } else {
         // Logged out
         setIsPremium(false);
@@ -5402,7 +5426,7 @@ export default function App() {
                 <div className="text-center font-bold text-xs uppercase tracking-widest text-slate-400">
                   Stripe Checkout Control Center
                 </div>
-                <PremiumUpgradePanel />
+                <SubscriptionCheckout />
               </div>
 
               {/* Pricing Cards Comparison */}

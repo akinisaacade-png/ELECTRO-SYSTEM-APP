@@ -16,6 +16,7 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // Validate IDs up to 128 characters to prevent injection/wallet exhaustion
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
@@ -44,6 +45,31 @@ service cloud.firestore {
         && data.checksRun >= 0;
     }
 
+    // Validation blueprints for User Document
+    function isValidUser(data) {
+      return data.userId is string
+        && data.userId.size() <= 128
+        && data.email is string
+        && data.email.size() <= 256
+        && data.isPremium is bool;
+    }
+
+    // Validation blueprints for Stripe Log Document
+    function isValidStripeLog(data) {
+      return data.logId is string
+        && data.logId.size() <= 128
+        && data.userId is string
+        && data.userId.size() <= 128
+        && data.event is string
+        && data.event.size() <= 100
+        && data.status is string
+        && data.status.size() <= 50
+        && data.amount is string
+        && data.amount.size() <= 32
+        && data.description is string
+        && data.description.size() <= 500;
+    }
+
     // match rule for the userAnalytics sub-collection
     match /userAnalytics/{userId} {
       allow read: if isOwner(userId);
@@ -56,6 +82,44 @@ service cloud.firestore {
       allow update: if isOwner(userId)
         && isValidId(userId)
         && isValidUserAnalytics(incoming())
+        && incoming().userId == userId
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(userId);
+    }
+
+    // match rule for the users root collection
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUser(incoming())
+        && incoming().userId == userId;
+
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUser(incoming())
+        && incoming().userId == userId
+        && incoming().userId == existing().userId;
+
+      allow delete: if isOwner(userId);
+    }
+
+    // match rule for nested stripe logs
+    match /users/{userId}/stripe_logs/{logId} {
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidId(logId)
+        && isValidStripeLog(incoming())
+        && incoming().userId == userId;
+
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidId(logId)
+        && isValidStripeLog(incoming())
         && incoming().userId == userId
         && incoming().userId == existing().userId;
 

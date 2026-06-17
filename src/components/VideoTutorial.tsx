@@ -104,6 +104,12 @@ export default function VideoTutorial({ onTrackAction }: Props) {
   const handleGenerateVideo = async () => {
     if (!prompt.trim() || loading) return;
 
+    const user = auth.currentUser;
+    if (!user) {
+      setError('Authentication required. Please sign in first.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setOpDetails({ done: false, progress: 0, status: "Contacting Veo 3.1 generator..." });

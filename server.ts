@@ -448,6 +448,110 @@ const handleCreateCheckoutSession = async (req: express.Request, res: express.Re
 app.post("/api/create-checkout-session", handleCreateCheckoutSession);
 app.post("/api/stripe/create-checkout-session", handleCreateCheckoutSession);
 
+// ─── STRIPE WEBHOOK EVENT PROCESSING (LISTEN FOR SUBSCRIPTION STATE CHANGES) ───
+app.post("/api/stripe-webhook", async (req, res) => {
+  try {
+    const event = req.body;
+    console.log(`[Stripe Webhook] Received webhook event:`, event?.type);
+
+    if (event?.type === 'customer.subscription.deleted') {
+      const subscription = event.data?.object;
+      if (!subscription) {
+        return res.status(400).json({ error: "Invalid webhook payload structure" });
+      }
+
+      console.log(`[Stripe Webhook] Processing deleted subscription profile:`, subscription.id);
+
+      let userId = subscription.metadata?.userId;
+      
+      // If metadata doesn't contain userId, search for matching customerId in customers collection mapping
+      if (!userId && adminDb) {
+        try {
+          const customersSnap = await adminDb.collection('customers')
+            .where('stripeId', '==', subscription.customer)
+            .limit(1)
+            .get();
+
+          if (!customersSnap.empty) {
+            userId = customersSnap.docs[0].id;
+            console.log(`[Stripe Webhook] Resolved userId from customers lookup: ${userId}`);
+          }
+        } catch (dbErr) {
+          console.error("[Stripe Webhook] Customers collection lookup error:", dbErr);
+        }
+      }
+
+      if (userId) {
+        console.log(`[Stripe Webhook] Setting isPremium to false for user: ${userId}`);
+        
+        if (adminDb) {
+          // Update users/userId
+          await adminDb.collection('users').doc(userId).set({
+            isPremium: false,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+
+          // Update userAnalytics if exists
+          try {
+            await adminDb.collection('userAnalytics').doc(userId).set({
+              isPremium: false
+            }, { merge: true });
+          } catch (analyticsErr) {
+             console.warn("Analytics update warning:", analyticsErr);
+          }
+
+          // Log database event
+          const logId = `evt_del_${Date.now()}`;
+          await adminDb.collection('users').doc(userId).collection('stripe_logs').doc(logId).set({
+            logId,
+            userId,
+            event: 'customer.subscription.deleted',
+            status: 'deleted',
+            amount: 'N/A',
+            timestamp: new Date().toISOString(),
+            description: `Subscription ${subscription.id} cancelled or deleted. Premium license revoked.`
+          });
+          
+          console.log(`[Stripe Webhook] Updated Firestore state and appended deleted audit log successfully.`);
+        }
+        return res.json({ status: "success", message: "User isPremium status deactivated successfully.", userId });
+      } else {
+        console.warn(`[Stripe Webhook] Could not resolve user correlation for customer id: ${subscription.customer}`);
+        return res.status(404).json({ error: "Could not correlate customer with a registered user ID" });
+      }
+    }
+
+    // Support receiving completed checkout success webhook event to make our database logs dynamic and fully operational!
+    if (event?.type === 'checkout.session.completed') {
+      const session = event.data?.object;
+      const userId = session?.metadata?.userId || (session?.client_reference_id);
+      if (userId && adminDb) {
+        console.log(`[Stripe Webhook] Processing billing completion for user: ${userId}`);
+        await adminDb.collection('users').doc(userId).set({
+          isPremium: true,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+
+        const logId = `evt_chk_${Date.now()}`;
+        await adminDb.collection('users').doc(userId).collection('stripe_logs').doc(logId).set({
+          logId,
+          userId,
+          event: 'checkout.session.completed',
+          status: 'succeeded',
+          amount: session.amount_total ? `$${(session.amount_total / 100).toFixed(2)}` : '$299.99',
+          timestamp: new Date().toISOString(),
+          description: `Checkout session verified. Premium license enabled successfully.`
+        });
+      }
+    }
+
+    return res.json({ received: true });
+  } catch (err: any) {
+    console.error("[Stripe Webhook] Error processing webhook:", err);
+    return res.status(500).json({ error: "Webhook trigger error", message: err.message });
+  }
+});
+
 // ─── HIGH LEVEL SINGLE-LINE DIAGRAM RENDERER (SVG) ───
 function generateCircuitDiagram(bulk_load_data: any): string {
   const sources = Array.isArray(bulk_load_data?.sources) ? bulk_load_data.sources : [
