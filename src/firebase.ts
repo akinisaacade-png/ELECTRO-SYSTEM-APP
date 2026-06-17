@@ -1,10 +1,15 @@
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
-import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
-import { getStripePayments, createCheckoutSession } from '@stripe/firestore-stripe-payments';
+import { getFirestore, doc, getDocFromServer, collection, addDoc, onSnapshot } from "firebase/firestore";
+import { getStripePayments, createCheckoutSession } from '@invertase/firestore-stripe-payments';
+import { loadStripe } from '@stripe/stripe-js';
 import firebaseConfig from "../firebase-applet-config.json";
 
+const stripePublishableKey = (import.meta as any).env?.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_live_Y8I4kIWBXPdQIfZ2tthPIFwV00DlqCjZva';
+const stripePromise = loadStripe(stripePublishableKey);
+
 const app = initializeApp(firebaseConfig);
+export { app, createCheckoutSession };
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth(app);
 
@@ -35,14 +40,22 @@ export const initializeGuestSession = async () => {
   }
 };
 
-// Initialize Stripe Payments Extension
-export const stripePayments = getStripePayments(app, {
-  productsCollection: 'products',
-  customersCollection: 'customers',
+// FIX: Use getApp() to ensure we pass the correct app instance type
+// Some versions require the app instance from getApp() rather than the initialized one
+const firebaseApp = getApp();
+
+// Initialize Stripe Payments with explicit collection paths
+export const payments = getStripePayments(firebaseApp, {
+  productsCollection: "products",
+  customersCollection: "customers",
+  // Optional: specify if your collections are nested
 });
 
+// For retroactive compatibility with other code
+export const stripePayments = payments;
+
 // Avoid Firebase double-bundling / version mismatch issue by supplying a custom UserDAO component
-(stripePayments as any).setComponent('user-dao', {
+(payments as any).setComponent('user-dao', {
   getCurrentUser: (): string => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
@@ -59,7 +72,7 @@ export const PRICE_IDS = {
 };
 
 /**
- * Triggers the Stripe Checkout redirect for a selected tier
+ * Triggers the Stripe Checkout redirect for a selected tier using the Universal Compatible approach.
  * @param priceId The Stripe Price ID to purchase
  * @param onProgress Callback function to report checkout progress/state changes
  */
@@ -67,15 +80,9 @@ export const checkout = async (
   priceId: string,
   onProgress?: (status: 'loading' | 'redirecting' | 'closed' | 'error' | 'success', message?: string) => void
 ) => {
-  let checkoutWindow: Window | null = null;
-  let isCompleted = false;
-  let monitorInterval: NodeJS.Timeout | null = null;
-  let handleMessage: ((event: MessageEvent) => void) | null = null;
-
   try {
-    onProgress?.('loading');
-
-    // 1. If no user is logged in, silently sign them in anonymously so checkout doesn't crash
+    onProgress?.('loading', "Initializing secure checkout session...");
+    
     let currentUser = auth.currentUser;
     if (!currentUser) {
       try {
@@ -87,143 +94,138 @@ export const checkout = async (
       }
     }
 
-    // To prevent popup blockers (by keeping it in the synchronous user click handler context),
-    // we open a blank window immediately and style it with a loading state.
-    checkoutWindow = window.open('about:blank', '_blank');
-    if (checkoutWindow) {
-      try {
-        checkoutWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>Connecting to Secure Checkout...</title>
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <style>
-                body {
-                  background: #0f172a;
-                  color: #e2e8f0;
-                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                  display: flex;
-                  flex-direction: column;
-                  justify-content: center;
-                  align-items: center;
-                  height: 100vh;
-                  margin: 0;
-                  padding: 24px;
-                  box-sizing: border-box;
-                  text-align: center;
-                }
-                .container {
-                  max-width: 400px;
-                  background: #1e293b;
-                  border: 1px solid #334155;
-                  border-radius: 12px;
-                  padding: 32px;
-                  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
-                }
-                .spinner {
-                  border: 3px solid rgba(255, 255, 255, 0.1);
-                  width: 48px;
-                  height: 48px;
-                  border-radius: 50%;
-                  border-left-color: #f59e0b;
-                  animation: spin 1s linear infinite;
-                  margin: 0 auto 24px auto;
-                }
-                @keyframes spin {
-                  0% { transform: rotate(0deg); }
-                  100% { transform: rotate(360deg); }
-                }
-                h2 {
-                  font-weight: 600;
-                  font-size: 1.25rem;
-                  color: #f8fafc;
-                  margin: 0 0 12px 0;
-                }
-                p {
-                  color: #94a3b8;
-                  font-size: 0.875rem;
-                  line-height: 1.5;
-                  margin: 0;
-                }
-              </style>
-            </head>
-            <body>
-              <div class="container">
-                <div class="spinner"></div>
-                <h2>Connecting to Stripe Secure Servers</h2>
-                <p>Establishing handshakes with checkout endpoints. Please keep this window open and do-not refresh...</p>
-              </div>
-            </body>
-          </html>
-        `);
-      } catch (docErr) {
-        console.warn("Could not write initial loader to checkout popup.", docErr);
-      }
+    if (!currentUser) {
+      throw new Error("Failed to determine currently signed in user.");
     }
 
-    // 2. Proceed with checkout if user exists
-    const session = await createCheckoutSession(stripePayments, {
-      price: priceId,
-      success_url: window.location.origin + '?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url: window.location.origin,
-    });
-    
-    // Redirect user to Stripe Hosted Checkout Page
-    if (session.url) {
-      onProgress?.('redirecting');
-      if (checkoutWindow && !checkoutWindow.closed) {
-        checkoutWindow.location.assign(session.url);
-      } else {
-        // Fallback if popup was blocked/closed
-        window.location.assign(session.url);
+    const userId = currentUser.uid;
+    onProgress?.('loading', "Creating secure Stripe Checkout record...");
+
+    const checkoutSessionRef = await addDoc(
+      collection(db, 'customers', userId, 'checkout_sessions'),
+      {
+        price: priceId,
+        success_url: `${window.location.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${window.location.origin}/cancel`,
+        mode: 'subscription',
       }
+    );
 
-      // Track whether checkout completed successfully via postMessage
-      handleMessage = (event: MessageEvent) => {
-        if (event.origin !== window.location.origin) return;
-        if (event.data?.type === 'STRIPE_CHECKOUT_SUCCESS') {
-          isCompleted = true;
-          onProgress?.('success');
-          cleanup();
-        }
-      };
-      window.addEventListener('message', handleMessage);
+    onProgress?.('redirecting', "Polling secure Stripe handshake...");
 
-      // Now monitor the checkout window to see if the user closes it!
-      monitorInterval = setInterval(() => {
-        if (!checkoutWindow || checkoutWindow.closed) {
-          cleanup();
-          if (!isCompleted) {
-            onProgress?.('closed', "The Stripe Checkout window was closed before completion.");
+    return new Promise<void>((resolve, reject) => {
+      const unsubscribe = onSnapshot(checkoutSessionRef, async (snap) => {
+        const data = snap.data();
+        if (!data) return;
+
+        if (data.sessionId) {
+          unsubscribe();
+          onProgress?.('success', "Stripe handshake succeeded. Redirecting to billing page...");
+          const stripe = await stripePromise;
+          if (stripe) {
+            await (stripe as any).redirectToCheckout({ sessionId: data.sessionId });
+            resolve();
+          } else {
+            const err = new Error("Stripe failed to load");
+            onProgress?.('error', err.message);
+            reject(err);
           }
+        } else if (data.url) {
+          unsubscribe();
+          onProgress?.('success', "Stripe handshake succeeded. Redirecting to billing page...");
+          window.location.assign(data.url);
+          resolve();
+        } else if (data.error) {
+          unsubscribe();
+          const err = new Error(data.error.message);
+          onProgress?.('error', err.message);
+          alert(`Stripe Error: ${err.message}`);
+          reject(err);
         }
-      }, 1000);
-
-    } else {
-      throw new Error("No URL returned from checkout session creation.");
-    }
+      }, (err) => {
+        unsubscribe();
+        onProgress?.('error', err.message);
+        reject(err);
+      });
+    });
   } catch (error: any) {
     console.error("Stripe Checkout Error: ", error);
-    if (checkoutWindow && !checkoutWindow.closed) {
-      checkoutWindow.close();
-    }
     alert(`Could not initiate checkout: ${error?.message || "Please try again."}`);
     onProgress?.('error', error?.message);
-    cleanup();
-  }
-
-  function cleanup() {
-    if (monitorInterval) {
-      clearInterval(monitorInterval);
-      monitorInterval = null;
-    }
-    if (handleMessage) {
-      window.removeEventListener('message', handleMessage);
-      handleMessage = null;
-    }
   }
 };
+
+// Universal compatible helper exports as requested by user
+export const STRIPE_PRICE_ID_MONTHLY = PRICE_IDS.MONTHLY;
+export const STRIPE_PRICE_ID_YEARLY = PRICE_IDS.YEARLY;
+
+export async function createSubscriptionCheckout(priceId: string, mode: 'subscription' | 'payment' = 'subscription') {
+  let currentUser = auth.currentUser;
+  if (!currentUser) {
+    try {
+      currentUser = await initializeGuestSession();
+    } catch (authErr) {
+      throw new Error(`User must be authenticated. Guest initialization failed: ${authErr instanceof Error ? authErr.message : String(authErr)}`);
+    }
+  }
+
+  if (!currentUser) {
+    throw new Error('User must be authenticated to start checkout');
+  }
+
+  const userId = currentUser.uid;
+
+  try {
+    const checkoutSessionRef = await addDoc(
+      collection(db, 'customers', userId, 'checkout_sessions'),
+      {
+        price: priceId,
+        success_url: `${window.location.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${window.location.origin}/cancel`,
+        mode: mode,
+      }
+    );
+
+    return new Promise((resolve, reject) => {
+      const unsubscribe = onSnapshot(checkoutSessionRef, async (snap) => {
+        const data = snap.data();
+        if (!data) return;
+
+        if (data.sessionId) {
+          unsubscribe();
+          const stripe = await stripePromise;
+          if (stripe) {
+            await (stripe as any).redirectToCheckout({ sessionId: data.sessionId });
+            resolve(data);
+          } else {
+            reject(new Error("Stripe failed to load"));
+          }
+        } else if (data.url) {
+          unsubscribe();
+          window.location.assign(data.url);
+          resolve(data);
+        } else if (data.error) {
+          unsubscribe();
+          reject(new Error(data.error.message));
+        }
+      }, (err) => {
+        unsubscribe();
+        reject(err);
+      });
+    });
+  } catch (error) {
+    console.error('Checkout creation failed:', error);
+    throw error;
+  }
+}
+
+export async function subscribeMonthly() {
+  return createSubscriptionCheckout(STRIPE_PRICE_ID_MONTHLY, 'subscription');
+}
+
+export async function subscribeYearly() {
+  return createSubscriptionCheckout(STRIPE_PRICE_ID_YEARLY, 'subscription');
+}
 
 // Error Handling from Firebase Integration Skill
 export enum OperationType {
