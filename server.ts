@@ -376,8 +376,8 @@ const handleCreateCheckoutSession = async (req: express.Request, res: express.Re
 
     const docRef = await checkoutSessionRef.add({
       price: priceId,
-      success_url: `${req.headers.origin}`,
-      cancel_url: `${req.headers.origin}`,
+      success_url: `${req.headers.origin}/success`,
+      cancel_url: `${req.headers.origin}/cancel`,
       createdAt: new Date(),
     });
 
