@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { subscribeMonthly, subscribeYearly, auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, orderBy, limit, onSnapshot, doc, setDoc } from 'firebase/firestore';
@@ -28,6 +29,36 @@ export default function SubscriptionCheckout() {
   // Webhook simulator state
   const [simulationLoading, setSimulationLoading] = useState<boolean>(false);
   const [simulationSuccess, setSimulationSuccess] = useState<string | null>(null);
+
+  // Advanced progress bar and click-shake validation animation states
+  const [progress, setProgress] = useState<number>(0);
+  const [shouldShake, setShouldShake] = useState<boolean>(false);
+
+  // Form Field States to make the component fillable & interactive (White Theme)
+  const [cardNumber, setCardNumber] = useState<string>('');
+  const [expiry, setExpiry] = useState<string>('');
+  const [cvc, setCvc] = useState<string>('');
+  const [cardName, setCardName] = useState<string>('');
+
+  // Slowly increments the progress bar percentage during transaction loading
+  useEffect(() => {
+    let interval: any;
+    if (loading) {
+      setProgress(0);
+      interval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 98) {
+            return prev;
+          }
+          const step = Math.floor(Math.random() * 8) + 4; // increment steps
+          return Math.min(prev + step, 98);
+        });
+      }, 160);
+    } else {
+      setProgress(0);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -96,8 +127,17 @@ export default function SubscriptionCheckout() {
     return () => unsubscribe();
   }, [user]);
 
-  const handleSubscribe = async () => {
+  const handleSubscribe = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError(null);
+
+    // Simple validation barrier to ensure fields are filled out
+    if (!cardNumber || !expiry || !cvc || !cardName) {
+      setError('Please fill in all requested payment details before processing.');
+      setShouldShake(true);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -183,17 +223,18 @@ export default function SubscriptionCheckout() {
   const monthlyTotal = 29.99 * 12;
   const yearlyPrice = 299.99;
   const savingsAmount = (monthlyTotal - yearlyPrice).toFixed(2);
+  const isValid = !!(cardNumber.trim() && expiry.trim() && cvc.trim() && cardName.trim());
 
   if (authLoading) {
     return (
       <div className="checkout-wrapper">
         <div className="checkout-card">
-          <div className="loading-spinner">Loading session parameters...</div>
+          <div className="loading-spinner">Loading sandbox engine parameters...</div>
         </div>
         <style dangerouslySetInnerHTML={{ __html: `
           .checkout-wrapper {
             min-height: 100vh;
-            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            background: #ffffff;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -203,11 +244,12 @@ export default function SubscriptionCheckout() {
           }
           .checkout-card {
             background: #ffffff;
+            border: 1px solid #e2e8f0;
             border-radius: 16px;
             padding: 2.5rem;
             width: 100%;
             max-width: 480px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
           }
           .loading-spinner {
             text-align: center;
@@ -224,7 +266,7 @@ export default function SubscriptionCheckout() {
       <div className="checkout-card">
         <div className="checkout-header">
           <div className="logo-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2">
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
             </svg>
           </div>
@@ -233,7 +275,8 @@ export default function SubscriptionCheckout() {
 
         {/* Dynamic Billing Active Status Banner */}
         <div className="billing-status-badge">
-          LICENSE STATE: {dbUser?.isPremium ? (
+          LICENSE STATE:{' '}
+          {dbUser?.isPremium ? (
             <span className="badge-active">ACTIVE PREMIUM ✓</span>
           ) : (
             <span className="badge-inactive">INACTIVE LICENSE</span>
@@ -265,26 +308,61 @@ export default function SubscriptionCheckout() {
           </button>
         </div>
 
-        <div className="payment-form">
+        <form onSubmit={handleSubscribe} className="payment-form" noValidate>
           <div className="form-group">
             <label className="form-label">CARD CONDUCTOR NUM</label>
-            <input type="text" className="form-input" placeholder="4242 4242 4242 4242" disabled readOnly />
+            <input 
+              type="text" 
+              className="form-input" 
+              placeholder="4242 4242 4242 4242" 
+              value={cardNumber}
+              onChange={(e) => setCardNumber(e.target.value)}
+              disabled={loading}
+              maxLength={19}
+              required
+            />
           </div>
           
           <div className="form-row">
             <div className="form-group half">
               <label className="form-label">EXPIRATION</label>
-              <input type="text" className="form-input" placeholder="MM/YY" disabled readOnly />
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="MM/YY" 
+                value={expiry}
+                onChange={(e) => setExpiry(e.target.value)}
+                disabled={loading}
+                maxLength={5}
+                required
+              />
             </div>
             <div className="form-group half">
               <label className="form-label">CVC CODE</label>
-              <input type="text" className="form-input" placeholder="123" disabled readOnly />
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="123" 
+                value={cvc}
+                onChange={(e) => setCvc(e.target.value)}
+                disabled={loading}
+                maxLength={4}
+                required
+              />
             </div>
           </div>
           
           <div className="form-group">
             <label className="form-label">CONDUCTOR NAME</label>
-            <input type="text" className="form-input" placeholder="Full Name" disabled readOnly />
+            <input 
+              type="text" 
+              className="form-input" 
+              placeholder="Full Name" 
+              value={cardName}
+              onChange={(e) => setCardName(e.target.value)}
+              disabled={loading}
+              required
+            />
           </div>
 
           <div className="secure-note">
@@ -312,22 +390,69 @@ export default function SubscriptionCheckout() {
             </div>
           )}
 
-          <button 
-            type="button"
+          <motion.button 
+            type="submit"
             className="checkout-button"
-            onClick={handleSubscribe}
             disabled={loading}
+            animate={
+              shouldShake
+                ? { x: [0, -10, 10, -10, 10, -6, 6, -3, 3, 0], scale: 1 }
+                : isValid && !loading
+                  ? {
+                      scale: [1, 1.02, 1],
+                      boxShadow: [
+                        "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+                        "0 12px 20px -3px rgba(245, 158, 11, 0.4), 0 4px 8px -2px rgba(245, 158, 11, 0.2)",
+                        "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)"
+                      ]
+                    }
+                  : { scale: 1, x: 0, boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)" }
+            }
+            onAnimationComplete={() => {
+              if (shouldShake) {
+                setShouldShake(false);
+              }
+            }}
+            whileHover={!loading ? { scale: 1.025 } : {}}
+            whileTap={!loading ? { scale: 0.98 } : {}}
+            transition={
+              shouldShake
+                ? { duration: 0.55, ease: "easeInOut" }
+                : isValid && !loading
+                  ? {
+                      scale: {
+                        duration: 1.8,
+                        repeat: Infinity,
+                        ease: "easeInOut"
+                      },
+                      boxShadow: {
+                        duration: 1.8,
+                        repeat: Infinity,
+                        ease: "easeInOut"
+                      }
+                    }
+                  : { duration: 0.2 }
+            }
           >
             {loading ? (
-              <span className="button-content">
-                <span className="spinner"></span>
-                Processing Link...
-              </span>
+              <div className="btn-progress-container">
+                <div className="btn-progress-header">
+                  <span>TRANSACTION IN PROCESS</span>
+                  <span className="btn-progress-num">{progress}%</span>
+                </div>
+                <div className="btn-progress-track">
+                  <motion.div 
+                    className="btn-progress-fill"
+                    style={{ width: `${progress}%` }}
+                    transition={{ type: "spring", stiffness: 65, damping: 15 }}
+                  />
+                </div>
+              </div>
             ) : (
               `Authenticate Secure Purchase of $${selectedPlan === 'monthly' ? '29.99' : '299.99'}`
             )}
-          </button>
-        </div>
+          </motion.button>
+        </form>
       </div>
 
       {/* Stripe Activity Logs Container */}
@@ -417,7 +542,7 @@ export default function SubscriptionCheckout() {
       <style dangerouslySetInnerHTML={{ __html: `
         .checkout-wrapper {
           min-height: 100vh;
-          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+          background: #ffffff; 
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -428,11 +553,30 @@ export default function SubscriptionCheckout() {
 
         .checkout-card {
           background: #ffffff;
+          border: 1px solid #e2e8f0;
           border-radius: 16px;
           padding: 2.5rem;
           width: 100%;
           max-width: 480px;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+        }
+
+        .checkout-header {
+          text-align: center;
+          margin-bottom: 2rem;
+        }
+
+        .logo-icon {
+          margin-bottom: 1rem;
+          display: flex;
+          justify-content: center;
+        }
+
+        .checkout-title {
+          color: #64748b;
+          font-size: 1rem;
+          font-weight: 500;
+          margin: 0;
         }
 
         .billing-status-badge {
@@ -458,24 +602,6 @@ export default function SubscriptionCheckout() {
           padding: 0.35rem 0.85rem;
           border-radius: 9999px;
           border: 1px solid rgba(239, 68, 68, 0.2);
-        }
-
-        .checkout-header {
-          text-align: center;
-          margin-bottom: 2rem;
-        }
-
-        .logo-icon {
-          margin-bottom: 1rem;
-          display: flex;
-          justify-content: center;
-        }
-
-        .checkout-title {
-          color: #64748b;
-          font-size: 1rem;
-          font-weight: 500;
-          margin: 0;
         }
 
         .plan-selector {
@@ -514,7 +640,7 @@ export default function SubscriptionCheckout() {
         }
 
         .plan-name {
-          color: #94a3b8;
+          color: #64748b;
           font-size: 0.875rem;
           font-weight: 600;
           text-transform: uppercase;
@@ -565,7 +691,7 @@ export default function SubscriptionCheckout() {
         }
 
         .form-label {
-          color: #94a3b8;
+          color: #475569;
           font-size: 0.75rem;
           font-weight: 700;
           text-transform: uppercase;
@@ -573,27 +699,32 @@ export default function SubscriptionCheckout() {
         }
 
         .form-input {
-          background: #0f172a;
-          color: #e2e8f0;
-          border: 1px solid #1e293b;
+          background: #ffffff;
+          color: #1e293b;
+          border: 1px solid #cbd5e1;
           border-radius: 8px;
           padding: 0.875rem 1rem;
           font-size: 1rem;
           outline: none;
-          transition: border-color 0.2s;
+          transition: all 0.2s;
+        }
+
+        .form-input:focus {
+          border-color: #f59e0b;
+          box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
         }
 
         .form-input::placeholder {
-          color: #475569;
+          color: #94a3b8;
         }
 
         .secure-note {
           display: flex;
           align-items: center;
           gap: 0.5rem;
-          color: #64748b;
+          color: #475569;
           font-size: 0.875rem;
-          background: #f1f5f9;
+          background: #f8fafc;
           padding: 0.75rem;
           border-radius: 8px;
           margin-top: 0.5rem;
@@ -647,6 +778,45 @@ export default function SubscriptionCheckout() {
           cursor: not-allowed;
         }
 
+        .btn-progress-container {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          gap: 0.45rem;
+          color: #1e293b;
+          text-align: left;
+        }
+
+        .btn-progress-header {
+          display: flex;
+          justify-content: space-between;
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+        }
+
+        .btn-progress-num {
+          font-family: monospace;
+          font-size: 0.82rem;
+        }
+
+        .btn-progress-track {
+          width: 100%;
+          height: 6px;
+          background: rgba(30, 41, 59, 0.15);
+          border-radius: 9999px;
+          overflow: hidden;
+          position: relative;
+        }
+
+        .btn-progress-fill {
+          height: 100%;
+          background: #1e293b;
+          border-radius: 9999px;
+          box-shadow: 0 0 6px rgba(30, 41, 59, 0.15);
+        }
+
         .button-content {
           display: flex;
           align-items: center;
@@ -671,10 +841,11 @@ export default function SubscriptionCheckout() {
         .logs-container {
           background: #ffffff;
           border-radius: 16px;
+          border: 1px solid #e2e8f0;
           padding: 2.5rem;
           width: 100%;
           max-width: 480px;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
           margin-top: 1.5rem;
           font-family: inherit;
         }
@@ -881,11 +1052,17 @@ export default function SubscriptionCheckout() {
 
         .checkout-footer {
           margin-top: 2rem;
-          color: #64748b;
+          color: #94a3b8;
           font-size: 0.875rem;
           font-weight: 600;
           letter-spacing: 0.1em;
           text-transform: uppercase;
+        }
+
+        .loading-spinner {
+          text-align: center;
+          color: #64748b;
+          padding: 2rem;
         }
 
         @media (max-width: 640px) {
